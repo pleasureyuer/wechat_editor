@@ -1,0 +1,456 @@
+<template>
+  <div class="left-sidebar-inner">
+    <!-- 左侧图标导航 -->
+    <nav class="icon-nav">
+      <button
+        v-for="item in navItems"
+        :key="item.key"
+        class="nav-btn"
+        :class="{ active: activeNav === item.key }"
+        @click="activeNav = item.key"
+        :title="item.label"
+      >
+        <span class="nav-icon">{{ item.icon }}</span>
+        <span class="nav-label">{{ item.label }}</span>
+      </button>
+    </nav>
+
+    <!-- 右侧：组件面板内容区 -->
+    <div class="panel-content">
+      <!-- 内容输入面板 -->
+      <div v-if="activeNav === 'input'" class="panel-section">
+        <h3 class="panel-title">内容输入</h3>
+        <textarea
+          v-model="markdownInput"
+          class="md-textarea"
+          placeholder="在这里粘贴或输入 Markdown 文本..."
+          rows="8"
+          @input="handleMdInput"
+        ></textarea>
+        <div class="panel-actions">
+          <button class="panel-btn" @click="applyMarkdown">一键排版</button>
+          <button class="panel-btn panel-btn-outline" @click="loadSample">示例文本</button>
+          <button class="panel-btn panel-btn-outline" @click="clearInput">清空</button>
+        </div>
+      </div>
+
+      <!-- 标题样式面板 -->
+      <div v-else-if="activeNav === 'title'" class="panel-section">
+        <h3 class="panel-title">标题样式</h3>
+
+        <!-- 子分类 Tab -->
+        <div class="sub-tabs">
+          <button
+            v-for="(cat, key) in titleCategories"
+            :key="key"
+            class="sub-tab"
+            :class="{ active: activeTitleCat === key }"
+            @click="activeTitleCat = key"
+          >{{ cat.name }}</button>
+        </div>
+
+        <!-- 组件列表 -->
+        <div class="component-grid">
+          <button
+            v-for="comp in titleCategories[activeTitleCat]?.items || []"
+            :key="comp.type"
+            class="comp-card"
+            @click="insertComponent(comp)"
+          >
+            <div class="comp-preview" v-html="comp.preview"></div>
+            <span class="comp-name">{{ comp.name }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 卡片样式面板 -->
+      <div v-else-if="activeNav === 'card'" class="panel-section">
+        <h3 class="panel-title">卡片 & 引用</h3>
+        <div class="component-list-vertical">
+          <button
+            v-for="comp in cardComponents"
+            :key="comp.type"
+            class="comp-item"
+            @click="insertComponent(comp)"
+          >
+            <span class="comp-icon-lg">{{ comp.icon }}</span>
+            <span>{{ comp.name }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 分割线面板 -->
+      <div v-else-if="activeNav === 'divider'" class="panel-section">
+        <h3 class="panel-title">分割线 & 装饰</h3>
+        <div class="component-list-vertical">
+          <button
+            v-for="comp in dividerComponents"
+            :key="comp.type"
+            class="comp-item"
+            @click="insertComponent(comp)"
+          >
+            <span class="comp-icon-lg">{{ comp.icon }}</span>
+            <span>{{ comp.name }}</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 互动组件面板 -->
+      <div v-else-if="activeNav === 'interactive'" class="panel-section">
+        <h3 class="panel-title">互动元素</h3>
+        <p class="panel-hint">（后期扩展：投票、留言等）</p>
+      </div>
+
+      <!-- 我的主题面板 -->
+      <div v-else-if="activeNav === 'mytheme'" class="panel-section">
+        <h3 class="panel-title">我的主题</h3>
+        <p class="panel-hint">自定义主题保存功能开发中...</p>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive } from 'vue';
+import { useEditorStore } from '../stores/editor';
+
+const editorStore = useEditorStore();
+const emit = defineEmits(['insert-component', 'apply-markdown']);
+
+const activeNav = ref('title');
+const markdownInput = ref('');
+const activeTitleCat = ref('number');
+
+// 导航项
+const navItems = [
+  { key: 'input', label: '内容输入', icon: '✏️' },
+  { key: 'title', label: '标题', icon: '🔤' },
+  { key: 'card', label: '卡片', icon: '📦' },
+  { key: 'divider', label: '分割线', icon: '➖' },
+  { key: 'interactive', label: '互动', icon: '💬' },
+  { key: 'mytheme', label: '我的主题', icon: '🎨' }
+];
+
+// 标题分类
+const titleCategories = reactive({
+  number: {
+    name: '编号标题',
+    items: [
+      { type: 'numberTitle', name: '编号标题', preview: '<b style="color:var(--theme-color,#0066ff)">01</b> 编号标题' },
+      { type: 'gradientTitle', name: '渐变标题', preview: '<span style="background:linear-gradient(90deg,var(--theme-color,#0066ff),#a78bfa);-webkit-background-clip:text;-webkit-text-fill:transparent;font-weight:bold">渐变标题</span>' },
+      { type: 'tagTitle', name: '标签标题', preview: '<span style="border-left:4px solid var(--theme-color,#0066ff);padding-left:10px;font-weight:bold">标签标题</span>' }
+    ]
+  },
+  pill: {
+    name: '胶囊标题',
+    items: [
+      { type: 'pillTitle', name: '胶囊标题', preview: '<span style="background:var(--theme-light,#e6f0ff);color:var(--theme-color,#0066ff);padding:2px 12px;border-radius:12px;font-size:12px;font-weight:bold">1</span> 胶囊标题' },
+      { type: 'softPillTitle', name: '软底胶囊标题', preview: '<span style="background:#f0f0f0;color:#666;padding:2px 10px;border-radius:10px;font-size:11px">标签</span> 软底胶囊' }
+    ]
+  },
+  line: {
+    name: '竖线标题',
+    items: [
+      { type: 'leftLineTitle', name: '左竖线标题', preview: '<span style="display:inline-block;border-left:4px solid var(--theme-color,#0066ff);padding-left:10px;font-weight:bold;line-height:1.4">左竖线标题</span>' },
+      { type: 'rightLineTitle', name: '右竖线标题', preview: '<span style="display:inline-block;text-align:right;border-right:4px solid var(--theme-color,#0066ff);padding-right:10px;font-weight:bold;line-height:1.4">右竖线标题</span>' },
+      { type: 'centerLineTitle', name: '居中标题', preview: '<span style="display:block;text-align:center;font-weight:bold;border-bottom:2px solid var(--theme-color,#0066ff);padding-bottom:6px">居中标题</span>' }
+    ]
+  },
+  circle: {
+    name: '引导/圆点',
+    items: [
+      { type: 'circleIconTitle', name: '圆形图标标题', preview: '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--theme-color,#0066ff);color:#fff;font-size:12px;font-weight:bold;margin-right:8px">💡</span>圆形图标标题' },
+      { type: 'dotLine', name: '圆点横线', preview: '<span>●————————————— 圆点横线</span>' },
+      { type: 'underlineTitle', name: '下划线标题', preview: '<span style="font-weight:bold;border-bottom:2px solid var(--theme-color,#0066ff);padding-bottom:2px">下划线标题</span>' }
+    ]
+  },
+  special: {
+    name: '特殊标题',
+    items: [
+      { type: 'cardTitle', name: '卡片标题', preview: '<span style="display:inline-block;background:var(--theme-light,#e6f0ff);border:1px solid var(--theme-color,#0066ff);border-radius:6px;padding:6px 14px;font-weight:bold;color:var(--theme-color,#0066ff)">卡片标题</span>' },
+      { type: 'stepTitle', name: '步骤标题', preview: '<b style="color:var(--theme-color,#0066ff);font-size:16px">1</b><span style="margin-left:6px;font-weight:bold">步骤标题</span>' }
+    ]
+  }
+});
+
+// 卡片组件
+const cardComponents = [
+  { type: 'cardBox', name: '卡片框', icon: '📦' },
+  { type: 'highlightBlock', name: '色块加重', icon: '🎨' },
+  { type: 'quoteBlock', name: '引用块', icon: '💬' },
+  { type: 'infoBox', name: '提示框', icon: 'ℹ️' },
+  { type: 'disclaimer', name: '原创声明', icon: '📌' }
+];
+
+// 分割线组件
+const dividerComponents = [
+  { type: 'dividerSolid', name: '实线分割线', icon: '―' },
+  { type: 'dividerDashed', name: '虚线分割线', icon: '┄' },
+  { type: 'dividerDot', name: '点状分割线', icon: '⋯' },
+  { type: 'dividerThick', name: '粗分割线', icon: '━' },
+  { type: 'spacer', name: '留白间距', icon: '⤵' }
+];
+
+const insertComponent = (comp) => {
+  emit('insert-component', comp);
+};
+
+const handleMdInput = () => {};
+const applyMarkdown = () => {
+  emit('apply-markdown', markdownInput.value);
+};
+const loadSample = () => {
+  markdownInput.value = `# 渐变标题（H1 → gradientTitle）
+
+这是一级标题，默认使用「渐变背景标题」样式，适合文章开头的主题介绍，视觉冲击力强。
+
+## 编号标题（H2 → numberTitle）
+
+这是二级标题下方的正文内容。H2 会自动应用「编号标题」样式。左侧有圆形编号，底部有主题色下划线。正文字号已统一为 **16px**，阅读更舒适。
+
+### 胶囊标题（H3 → pillTitle）
+
+这是三级标题下方的正文内容...`;
+};
+const clearInput = () => { markdownInput.value = ''; };
+</script>
+
+<style scoped>
+.left-sidebar-inner {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ====== 图标导航栏 ====== */
+.icon-nav {
+  width: 56px;
+  background: #fafbfc;
+  border-right: 1px solid #e8eaed;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.nav-btn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: all 0.15s ease;
+  color: #666;
+}
+
+.nav-btn:hover {
+  background: #eef1f5;
+  color: var(--theme-color, #0066ff);
+}
+
+.nav-btn.active {
+  background: var(--theme-light, #e6f0ff);
+  color: var(--theme-color, #0066ff);
+}
+
+.nav-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.nav-label {
+  font-size: 10px;
+  line-height: 1;
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ====== 面板内容区 ====== */
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.panel-section {
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+
+.panel-hint {
+  font-size: 12px;
+  color: #aaa;
+  text-align: center;
+  padding: 30px 0;
+}
+
+/* Markdown 输入 */
+.md-textarea {
+  width: 100%;
+  border: 1px solid #e0e2e5;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  line-height: 1.7;
+  color: #444;
+}
+.md-textarea:focus {
+  border-color: var(--theme-color, #0066ff);
+  box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.08);
+}
+.md-textarea::placeholder {
+  color: #ccc;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.panel-btn {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--theme-color, #0066ff);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+.panel-btn:hover { opacity: 0.9; }
+
+.panel-btn-outline {
+  background: #fff;
+  color: #666;
+  border: 1px solid #d9dce1;
+}
+.panel-btn-outline:hover {
+  background: #f8f9fa;
+  opacity: 1;
+}
+
+/* 子分类 Tab */
+.sub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.sub-tab {
+  padding: 4px 10px;
+  border: 1px solid #e0e2e5;
+  border-radius: 14px;
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  color: #666;
+  transition: all 0.15s;
+}
+.sub-tab:hover {
+  border-color: var(--theme-color, #0066ff);
+  color: var(--theme-color, #0066ff);
+}
+.sub-tab.active {
+  background: var(--theme-color, #0066ff);
+  color: #fff;
+  border-color: var(--theme-color, #0066ff);
+}
+
+/* 组件网格 */
+.component-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comp-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid #eef0f2;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+.comp-card:hover {
+  border-color: var(--theme-color, #0066ff);
+  background: var(--theme-light, #f8fbff);
+  box-shadow: 0 1px 4px rgba(0, 102, 255, 0.08);
+}
+
+.comp-preview {
+  min-width: 120px;
+  font-size: 12px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comp-name {
+  font-size: 12px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+/* 垂直列表 */
+.component-list-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.comp-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #eef0f2;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: #444;
+  transition: all 0.15s;
+}
+.comp-item:hover {
+  border-color: var(--theme-color, #0066ff);
+  background: var(--theme-light, #f8fbff);
+}
+
+.comp-icon-lg {
+  font-size: 18px;
+}
+</style>
