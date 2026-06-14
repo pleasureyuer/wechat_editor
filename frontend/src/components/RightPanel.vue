@@ -1,21 +1,20 @@
 <template>
   <div class="right-panel">
-    <!-- 颜色选择器 -->
-    <div class="rp-section">
-      <h3 class="rp-title">主题配色</h3>
-      <div class="color-grid">
+    <!-- 主题配色（紧凑版） -->
+    <div class="rp-section rp-compact">
+      <div class="color-row">
         <button
           v-for="(theme, key) in editorStore.themes"
           :key="key"
-          class="color-btn"
+          class="color-dot-btn"
           :class="{ active: editorStore.currentTheme === key }"
-          @click="editorStore.setTheme(key)"
           :title="theme.name"
+          @click="editorStore.setTheme(key)"
         >
-          <span class="color-dot" :style="{ background: theme.color }"></span>
+          <span class="dot-inner" :style="{ background: theme.color }"></span>
         </button>
       </div>
-      <p class="current-theme-name">{{ editorStore.themes[editorStore.currentTheme]?.name }}</p>
+      <span class="theme-label">{{ editorStore.themes[editorStore.currentTheme]?.name }}</span>
     </div>
 
     <!-- 实时预览 -->
@@ -24,23 +23,7 @@
         预览
         <span class="rp-subtitle">（公众号效果）</span>
       </h3>
-      <div class="preview-frame">
-        <div class="preview-phone-notch"></div>
-        <div class="preview-content" v-html="previewHTML"></div>
-      </div>
-    </div>
-
-    <!-- 快捷操作 -->
-    <div class="rp-section">
-      <h3 class="rp-title">快捷操作</h3>
-      <div class="quick-actions">
-        <button class="qa-btn" @click="$emit('copy')">
-          📋 复制 HTML
-        </button>
-        <button class="qa-btn qa-btn-outline" @click="$emit('export')">
-          📤 导出文件
-        </button>
-      </div>
+      <div class="preview-body" v-html="previewHTML"></div>
     </div>
   </div>
 </template>
@@ -49,7 +32,6 @@
 import { computed } from 'vue';
 import { useEditorStore } from '../stores/editor';
 
-const emit = defineEmits(['copy', 'export']);
 const editorStore = useEditorStore();
 
 const previewHTML = computed(() => {
@@ -65,8 +47,60 @@ const previewHTML = computed(() => {
   overflow-y: auto;
 }
 
+/* 紧凑配色区 */
+.rp-compact {
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.color-dot-btn {
+  width: 22px;
+  height: 22px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.color-dot-btn:hover { transform: scale(1.2); }
+.color-dot-btn.active {
+  border-color: #333;
+  transform: scale(1.15);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+.dot-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+}
+
+.theme-label {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 预览区 */
 .rp-section {
-  padding: 14px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid #f0f0f0;
 }
 
@@ -81,7 +115,7 @@ const previewHTML = computed(() => {
   font-size: 13px;
   font-weight: 700;
   color: #333;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .rp-subtitle {
@@ -91,99 +125,27 @@ const previewHTML = computed(() => {
   margin-left: 4px;
 }
 
-/* 颜色选择器 */
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-}
-
-.color-btn {
-  width: 100%;
-  aspect-ratio: 1;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-  background: #fff;
-}
-.color-btn:hover {
-  transform: scale(1.12);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-}
-.color-btn.active {
-  border-color: #333;
-  transform: scale(1.08);
-}
-
-.color-dot {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  display: block;
-}
-
-.current-theme-name {
-  text-align: center;
-  font-size: 12px;
-  color: #888;
-  margin-top: 8px;
-}
-
-/* 预览区 */
-.preview-frame {
+.preview-body {
   flex: 1;
+  overflow-y: auto;
+  padding: 20px 28px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
   background: #fff;
   border: 1px solid #e8eaed;
   border-radius: 10px;
-  overflow-y: auto;
-  position: relative;
-  min-height: 200px;
+  min-height: 0;
 }
-
-.preview-phone-notch {
-  height: 24px;
-  background: #f5f6f7;
-  border-radius: 10px 10px 0 0;
-  border-bottom: 1px solid #e8eaed;
+/* 预览区列表样式 */
+.preview-body :deep(ul), .preview-body :deep(ol) {
+  padding-left: 24px;
+  margin: 12px 0;
 }
-
-.preview-content {
-  padding: 12px 14px;
-  font-size: 13px;
+.preview-body :deep(ul) { list-style-type: disc; }
+.preview-body :deep(ol) { list-style-type: decimal; }
+.preview-body :deep(li) {
   line-height: 1.8;
-  color: #333;
+  padding: 2px 0;
 }
-
-/* 快捷操作 */
-.quick-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.qa-btn {
-  width: 100%;
-  padding: 9px;
-  border: none;
-  border-radius: 8px;
-  background: var(--theme-color, #0066ff);
-  color: #fff;
-  font-size: 13px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: opacity 0.15s;
-}
-.qa-btn:hover { opacity: 0.88; }
-
-.qa-btn-outline {
-  background: #fff;
-  color: #666;
-  border: 1px solid #d9dce1;
-}
-.qa-btn-outline:hover { background: #f8f9fa; }
 </style>

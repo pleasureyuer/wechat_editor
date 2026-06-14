@@ -28,6 +28,8 @@
           @input="handleMdInput"
         ></textarea>
         <div class="panel-actions">
+          <button class="panel-btn panel-btn-outline" @click="triggerFileInput">📂 导入MD</button>
+          <input ref="fileInputRef" type="file" accept=".md,.txt,.markdown" style="display:none" @change="handleFileImport" />
           <button class="panel-btn" @click="applyMarkdown">一键排版</button>
           <button class="panel-btn panel-btn-outline" @click="loadSample">示例文本</button>
           <button class="panel-btn panel-btn-outline" @click="clearInput">清空</button>
@@ -117,9 +119,10 @@ import { useEditorStore } from '../stores/editor';
 const editorStore = useEditorStore();
 const emit = defineEmits(['insert-component', 'apply-markdown']);
 
-const activeNav = ref('title');
+const activeNav = ref('input');
 const markdownInput = ref('');
 const activeTitleCat = ref('number');
+const fileInputRef = ref(null);
 
 // 导航项
 const navItems = [
@@ -213,6 +216,28 @@ const loadSample = () => {
 这是三级标题下方的正文内容...`;
 };
 const clearInput = () => { markdownInput.value = ''; };
+
+// 导入 MD 文件
+const triggerFileInput = () => {
+  fileInputRef.value?.click();
+};
+
+const handleFileImport = (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    markdownInput.value = evt.target.result || '';
+    // 自动切换到内容输入面板
+    activeNav.value = 'input';
+  };
+  reader.onerror = () => {
+    alert('文件读取失败，请重试');
+  };
+  reader.readAsText(file, 'UTF-8');
+  // 重置 input，允许重复选择同一文件
+  e.target.value = '';
+};
 </script>
 
 <style scoped>
@@ -224,7 +249,7 @@ const clearInput = () => { markdownInput.value = ''; };
 
 /* ====== 图标导航栏 ====== */
 .icon-nav {
-  width: 56px;
+  width: 50px;
   background: #fafbfc;
   border-right: 1px solid #e8eaed;
   display: flex;
@@ -236,8 +261,8 @@ const clearInput = () => { markdownInput.value = ''; };
 }
 
 .nav-btn {
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -279,6 +304,7 @@ const clearInput = () => { markdownInput.value = ''; };
 .panel-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
 }
 
@@ -328,7 +354,8 @@ const clearInput = () => { markdownInput.value = ''; };
 }
 
 .panel-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
   margin-top: 8px;
 }
@@ -411,7 +438,9 @@ const clearInput = () => { markdownInput.value = ''; };
 }
 
 .comp-preview {
-  min-width: 120px;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1;
   font-size: 12px;
   color: #555;
   white-space: nowrap;
