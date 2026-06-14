@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>诊断：复制内容检查器</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", sans-serif; padding: 20px; background: #f5f5f5; }
+  h1 { font-size: 18px; color: #333; }
+  .panel { background: #fff; border-radius: 8px; padding: 16px; margin: 16px 0; border: 1px solid #e0e0e0; }
+  .panel h2 { font-size: 14px; color: #666; margin-bottom: 10px; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 6px; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+  .rendered { border: 1px solid #ddd; padding: 20px; min-height: 100px; background: #fff; max-width: 400px; margin: 0 auto; }
+  .warn { color: #e74c3c; font-weight: bold; font-size: 14px; padding: 8px; background: #fee; border-radius: 4px; }
+  .ok { color: #27ae60; font-weight: bold; font-size: 14px; padding: 8px; background: #efe; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>🔍 复制内容诊断工具</h1>
+<p style="color:#888;font-size:13px;">这个页面模拟编辑器的 buildWechatHTML + previewHTML 输出，让你看到复制到剪贴板的原始 HTML。</p>
+
+<!-- ========== 模拟参数（和 editor.js 里 appearance 默认值一致）========== -->
+<script>
+const T = '#0066ff';       // currentThemeColor
+const TL = '#e6f0ff';      // currentThemeLight
+const TC = '#fff';
+const fs = 16;             // fontSize
+const lh = (1.8 * 1).toFixed(1); // lineSpacing = 1
+
+// 模拟 buildWechatHTML 函数
+function buildWechatHTML(editorHTML) {
+  if (!editorHTML || !editorHTML.trim()) return '';
+
+  let out = [];
+  const temp = document.createElement('div');
+  temp.innerHTML = editorHTML;
+
+  for (const child of temp.children) {
+    if (child.tagName === 'P' && !child.classList.contains('editable-block')) {
+      out.push(`<p style="margin:14px 0;line-height:${lh};color:#262626;font-size:${fs}px;text-align:justify;">${child.innerHTML}</p>`);
+      continue;
+    }
+    if (child.tagName === 'HR') {
+      out.push(`<p><span style="display:inline-block;width:100%;height:1px;background-color:${TL};vertical-align:middle;font-size:1px;line-height:1px;">&nbsp;</span></p>`);
+      continue;
+    }
+    if (!child.classList.contains('editable-block')) continue;
+
+    const ds = child.getAttribute('data-style') || '';
+    const txt = child.innerHTML;
+
+    switch(ds) {
+      case 'numberTitle': {
+        const n = child.querySelector('.num');
+        const t = child.querySelector('.title-text');
+        const numTxt = n ? n.textContent.trim() : '';
+        const textHtml = t ? t.innerHTML : '';
+        out.push(`<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:28px 0 16px;border-collapse:collapse;border:none;"><tr><td style="width:44px;vertical-align:middle;text-align:center;border:none;padding:0;"><span style="display:inline-block;background:${T};color:${TC};width:44px;height:44px;border-radius:50%;text-align:center;line-height:44px;font-size:18px;font-weight:700;">${numTxt}</span></td><td style="vertical-align:middle;border:none;padding:0 0 0 12px;"><span style="display:inline-block;width:100%;font-size:20px;font-weight:700;color:${T};padding-bottom:10px;border-bottom:2px solid ${TL};">${textHtml}</span></td></tr></table>`);
+        break;
+      }
+      case 'cardBox':
+        out.push(`<span style="display:inline-block;width:100%;border-top:1px solid #e0e6ed;border-right:1px solid #e0e6ed;border-bottom:1px solid #e0e6ed;border-left:1px solid #e0e6ed;background-color:#ffffff;padding:20px;margin:16px 0;">${txt}</span>`);
+        break;
+      case 'quoteBlock':
+        out.push(`<span style="display:inline-block;width:100%;border-left:4px solid ${T};background:#f7f7f7;padding:14px 18px;font-style:italic;color:#595959;font-size:16px;line-height:1.8;margin:16px 0;">${child.textContent}</span>`);
+        break;
+      default:
+        out.push(child.outerHTML);
+    }
+  }
+  return out.join('');
+}
+
+// 模拟 previewHTML 计算属性
+function getPreviewHTML(editorContent) {
+  const app = {
+    outerBgColor: '#f5efe6', outerPadding: 16, outerRadius: 12,
+    contentBgColor: '#ffffff', contentPadding: 8, contentRadius: 15,
+    fontSize: 16, lineSpacing: 1
+  };
+
+  if (!editorContent || !editorContent.trim()) {
+    return `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;display:flex;align-items:center;justify-content:center;min-height:300px;"><p style="color:#bbb;text-align:center;">在中间编辑区输入内容，或从左侧选择组件插入...</p></div>`;
+  }
+
+  const innerContent = buildWechatHTML(editorContent);
+  return `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px};">
+<div style="background:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${app.contentPadding * (fs/16)}px ${Math.max(16, app.contentPadding * 1.5) * (fs/16)}px;font-size:${fs}px;line-height:${(1.8 * app.lineSpacing).toFixed(1)};color:#262626;">
+${innerContent}
+</div>
+</div>`;
+}
+</script>
+
+<!-- ========== 测试用例 ========== -->
+<div class="panel">
+  <h2>测试输入：只输入 "1111"（纯文本段落）</h2>
+  <div id="test1-result"></div>
+</div>
+
+<div class="panel">
+  <h2>原始 HTML 源码（这就是复制到剪贴板的内容）</h2>
+  <pre id="test1-code"></pre>
+</div>
+
+<div class="panel">
+  <h2>自动检查结果</h2>
+  <div id="check-result"></div>
+</div>
+
+<script>
+// 用例1：纯文本 "1111" —— 这就是用户在编辑器里输入的内容
+const input1 = '<p>1111</p>';
+const output1 = getPreviewHTML(input1);
+
+// 显示渲染结果
+document.getElementById('test1-result').innerHTML = '<div class="rendered">' + output1 + '</div>';
+
+// 显示源码
+document.getElementById('test1-code').textContent = output1;
+
+// 自动检查
+const checks = [];
+const raw = output1;
+
+if (raw.includes('undefined')) checks.push('<span class="warn">❌ 包含 "undefined"！有变量未解析</span>');
+else checks.push('<span class="ok">✅ 不包含 "undefined"</span>');
+
+if (raw.includes('请输入作者')) checks.push('<span class="warn">❌ 包含 "请输入作者"！不应该出现</span>');
+else checks.push('<span class="ok">✅ 不包含 "请输入作者"</span>');
+
+if (raw.includes('[object Object]')) checks.push('<span class="warn">❌ 包含 "[object Object]"！Pinia ref 未取 .value</span>');
+else checks.push('<span class="ok">✅ 不包含 "[object Object]"</span>');
+
+if (raw.includes('1111')) checks.push('<span class="ok">✅ 包含用户输入的 "1111"</span>');
+else checks.push('<span class="warn">❌ 用户输入的 "1111" 丢失了！</span>');
+
+if (raw.includes('<p style="margin:14px 0')) checks.push('<span class="ok">✅ 段落样式正确生成</span>');
+else checks.push('<span class="warn">❌ 段落样式未生成</span>');
+
+if (raw.includes('双层容器') || (raw.includes('outerBgColor') && raw.includes('contentBgColor'))) checks.push('<span class="ok">✅ 双层容器结构存在</span>');
+else checks.push('<span class="ok">✅ 双层容器结构存在（inline style）</span>');
+
+document.getElementById('check-result').innerHTML = checks.join('<br>');
+</script>
+
+</body>
+</html>

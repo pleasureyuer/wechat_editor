@@ -127,32 +127,8 @@ export const useEditorStore = defineStore('editor', () => {
         continue;
       }
 
-      // 标题标签 H1/H2/H3 等：保留内容并加样式
-      if (/^H[1-6]$/.test(child.tagName)) {
-        const tag = child.tagName.toLowerCase();
-        const sizeMap = { h1: '22px', h2: '20px', h3: '18px', h4: '16px', h5: '15px', h6: '14px' };
-        out.push(`<${tag} style="margin:${tag === 'h1' ? '28px' : '24px'} 0 12px;font-size:${sizeMap[tag] || '16px'};font-weight:700;color:#222;line-height:${lh};">${child.innerHTML}</${tag}>`);
-        continue;
-      }
-
-      // 列表
-      if (child.tagName === 'UL' || child.tagName === 'OL') {
-        out.push(child.outerHTML);
-        continue;
-      }
-
-      // 引用块
-      if (child.tagName === 'BLOCKQUOTE') {
-        out.push(`<blockquote style="border-left:4px solid ${T};background:#f7f7f7;padding:14px 18px;color:#595959;font-size:${fs}px;line-height:${lh};margin:16px 0;">${child.innerHTML}</blockquote>`);
-        continue;
-      }
-
       // 只处理 editable-block
-      if (!child.classList.contains('editable-block')) {
-        // 其他未知标签：原样输出，加基础样式
-        out.push(`<section style="margin:14px 0;font-size:${fs}px;line-height:${lh};color:#262626;">${child.innerHTML}</section>`);
-        continue;
-      }
+      if (!child.classList.contains('editable-block')) continue;
 
       const ds = child.getAttribute('data-style') || '';
       // 组件整体内容（用于直接取文本的组件）
@@ -164,25 +140,27 @@ export const useEditorStore = defineStore('editor', () => {
           const t = child.querySelector('.title-text');
           const numTxt = n ? n.textContent.trim() : '';
           const textHtml = t ? t.innerHTML : '';
-          // 和编辑区一致：小圆圈 + 文字（不用大表格）
-          out.push(`<section style="display:flex;align-items:center;gap:10px;margin:18px 0 10px;">` +
-            `<span style="background:${T};color:${TC};width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:13px;font-weight:700;flex-shrink:0;display:inline-block;">${numTxt}</span>` +
-            `<span style="font-size:17px;font-weight:700;color:#222;">${textHtml}</span>` +
-          `</section>`);
+          out.push(`<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:28px 0 16px;border-collapse:collapse;border:none;">` +
+            `<tr>` +
+              `<td style="width:44px;vertical-align:middle;text-align:center;border:none;padding:0;">` +
+                `<span style="background:${T};color:${TC};width:44px;height:44px;border-radius:50%;text-align:center;line-height:44px;font-size:18px;font-weight:700;display:inline-block;">${numTxt}</span>` +
+              `</td>` +
+              `<td style="vertical-align:middle;border:none;padding:0 0 0 12px;">` +
+                `<section style="font-size:20px;font-weight:700;color:${T};padding-bottom:10px;border-bottom:2px solid ${TL};margin:0;">${textHtml}</section>` +
+              `</td>` +
+            `</tr>` +
+          `</table>`);
           break;
         }
 
         case 'gradientTitle': {
-          // 渐变文字在微信不生效，用主题色加粗大字代替
-          const titleText = child.querySelector('h2')?.textContent.trim() || child.textContent.trim();
-          out.push(`<section style="margin:22px 0 12px;"><span style="font-size:20px;font-weight:700;color:${T};">${titleText}</span></section>`);
+          out.push(`<section style="background:${T};color:${TC};padding:14px 20px;font-size:20px;font-weight:700;border-radius:10px;margin:16px 0;">${child.textContent.trim()}</section>`);
           break;
         }
 
         case 'tagTitle': {
-          // 和编辑区一致：左边框标题（不是居中药丸）
-          const titleHtml = child.querySelector('h2')?.innerHTML || child.textContent.trim();
-          out.push(`<section style="border-left:4px solid ${T};padding-left:12px;margin:22px 0 12px;"><span style="font-size:18px;font-weight:700;color:#333;">${titleHtml}</span></section>`);
+          out.push(`<section style="text-align:center;margin:24px 0 16px;">` +
+            `<span style="border-top:2px solid ${T};border-right:2px solid ${T};border-bottom:2px solid ${T};border-left:2px solid ${T};border-radius:30px;padding:10px 28px;font-size:18px;font-weight:700;color:${T};">${child.textContent.trim()}</span></section>`);
           break;
         }
 
@@ -191,112 +169,97 @@ export const useEditorStore = defineStore('editor', () => {
           const t = child.querySelector('.pill-text');
           const pillTxt = p ? p.textContent.trim() : '';
           const textHtml = t ? t.innerHTML : '';
-          // 和编辑区一致：小胶囊 + 文字
-          out.push(`<section style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;">` +
-            `<span style="background:${T};color:${TC};min-width:22px;height:22px;padding:0 7px;border-radius:11px;text-align:center;line-height:22px;font-size:12px;font-weight:700;flex-shrink:0;display:inline-block;">${pillTxt}</span>` +
-            `<span style="font-size:16px;font-weight:600;color:#222;">${textHtml}</span>` +
-          `</section>`);
+          out.push(`<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:28px 0 16px;border-collapse:collapse;border:none;">` +
+            `<tr>` +
+              `<td style="width:36px;vertical-align:middle;text-align:center;border:none;padding:0;">` +
+                `<span style="background:${T};color:${TC};width:36px;height:36px;border-radius:50%;text-align:center;line-height:36px;font-size:16px;font-weight:700;display:inline-block;">${pillTxt}</span>` +
+              `</td>` +
+              `<td style="vertical-align:middle;border:none;padding:0 0 0 10px;">` +
+                `<section style="font-size:18px;font-weight:700;color:${T};padding-bottom:8px;border-bottom:2px solid ${TL};margin:0;">${textHtml}</section>` +
+              `</td>` +
+            `</tr>` +
+          `</table>`);
           break;
         }
 
         case 'softPillTitle': {
-          // 和编辑区一致：灰色标签 + 文字（只取标签后的文字）
-          const clone = child.cloneNode(true);
-          const tagSpan = clone.querySelector('span');
-          if (tagSpan) tagSpan.remove();
-          const titleText = clone.textContent.trim();
-          out.push(`<section style="margin:20px 0 12px;"><span style="background:#f0f0f0;color:#666;padding:2px 10px;border-radius:10px;font-size:11px;margin-right:8px;">标签</span><span style="font-size:16px;font-weight:600;">${titleText}</span></section>`);
+          out.push(`<p style="margin:20px 0 12px;"><span style="background:#f0f0f0;color:#666;padding:2px 10px;border-radius:10px;font-size:11px;margin-right:8px;">标签</span><span style="font-size:16px;font-weight:600;">${child.textContent.trim()}</span></p>`);
           break;
         }
 
         case 'leftLineTitle': {
-          // 和编辑区一致：左边框标题
-          const lt = child.querySelector('h2');
-          const ltxt = lt ? lt.textContent.trim() : child.textContent.trim();
-          out.push(`<section style="border-left:4px solid ${T};padding-left:12px;margin:20px 0 12px;"><span style="font-size:17px;font-weight:700;color:#333;line-height:1.4;display:inline-block;">${ltxt}</span></section>`);
+          out.push(`<section style="padding:6px 0 6px 14px;border-left:5px solid ${T};margin:24px 0 16px;font-size:18px;font-weight:700;color:#333;line-height:1.4;">${txt}</section>`);
           break;
         }
 
         case 'rightLineTitle': {
-          const rt = child.querySelector('h2');
-          const rtxt = rt ? rt.textContent.trim() : child.textContent.trim();
-          out.push(`<section style="border-right:4px solid ${T};padding-right:12px;margin:20px 0 12px;text-align:right;"><span style="font-size:17px;font-weight:700;color:#333;line-height:1.4;display:inline-block;">${rtxt}</span></section>`);
+          out.push(`<section style="padding:6px 14px 6px 0;border-right:5px solid ${T};margin:24px 0 16px;font-size:18px;font-weight:700;color:#333;text-align:right;line-height:1.4;">${txt}</section>`);
           break;
         }
 
         case 'centerLineTitle': {
-          // 和编辑区一致：居中下划线标题
-          const ct = child.querySelector('h2');
-          const ctxt = ct ? ct.textContent.trim() : child.textContent.trim();
-          out.push(`<section style="text-align:center;margin:20px 0 12px;"><span style="font-size:17px;font-weight:700;border-bottom:2px solid ${T};padding-bottom:8px;color:#333;display:inline-block;">${ctxt}</span></section>`);
+          out.push(`<section align="center" style="margin:28px 0 18px;padding:0;"><span style="display:inline-block;width:30%;border-bottom:2px solid ${TL};vertical-align:middle;font-size:1px;line-height:1px;">&nbsp;</span><span style="padding:0 14px;white-space:nowrap;font-size:17px;font-weight:700;color:#333;vertical-align:middle;">${txt}</span><span style="display:inline-block;width:30%;border-bottom:2px solid ${TL};vertical-align:middle;font-size:1px;line-height:1px;">&nbsp;</span></section>`);
           break;
         }
 
         case 'circleIconTitle': {
-          // 用 child.children 只取直接子元素，不用 querySelectorAll（会找到所有后代）
-          let iconTxt = '💡', titleText = '';
-          for (const c of child.children) {
-            if (c.tagName === 'SPAN' && !titleText) {
-              // 第一个直接子 span：取图标文字
-              iconTxt = c.textContent.trim() || '💡';
-            } else if ((c.tagName === 'SPAN' || c.tagName === 'DIV' || typeof c.textContent === 'string') && !titleText) {
-              // 第二个元素（或非span的文本节点）：取标题
-              titleText = c.innerHTML || c.textContent.trim() || '';
-            }
-          }
-          // 如果没从 children 取到，用 textContent 去掉图标部分作为 fallback
-          if (!titleText) {
-            const full = child.textContent.trim();
-            titleText = full.replace(iconTxt, '').trim();
-          }
-          out.push(`<section style="display:flex;align-items:center;gap:10px;margin:16px 0 10px;">` +
-            `<span style="background:${T};color:${TC};width:26px;height:26px;border-radius:50%;text-align:center;line-height:26px;font-size:13px;flex-shrink:0;display:inline-block;">${iconTxt}</span>` +
-            `<span style="font-size:17px;font-weight:700;color:#333;">${titleText}</span>` +
-          `</section>`);
+          out.push(`<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:20px 0 12px;border-collapse:collapse;border:none;">` +
+            `<tr>` +
+              `<td style="width:36px;vertical-align:middle;text-align:center;border:none;padding:0;">` +
+                `<span style="display:inline-block;background:${T};color:${TC};width:36px;height:36px;border-radius:50%;text-align:center;line-height:36px;font-size:16px;">💡</span>` +
+              `</td>` +
+              `<td style="vertical-align:middle;border:none;padding:0 0 0 10px;">` +
+                `<span style="font-size:17px;font-weight:700;color:#333;">${child.querySelector('span:last-child')?.innerHTML || child.textContent.trim()}</span>` +
+              `</td>` +
+            `</tr>` +
+          `</table>`);
           break;
         }
 
         case 'dotLine': {
-          // 和编辑区一致：圆点 + 横线 + 文字
-          const spans = child.querySelectorAll('span');
-          const textHtml = spans.length >= 3 ? spans[2].innerHTML : (child.querySelector('.dot-text')?.innerHTML || child.textContent.trim());
-          out.push(`<section style="display:flex;align-items:center;gap:8px;margin:16px 0;">` +
-            `<span style="width:8px;height:8px;border-radius:50%;background:${T};flex-shrink:0;display:inline-block;"></span>` +
-            `<span style="flex:1;height:1px;background:#ddd;display:inline-block;"></span>` +
-            `<span style="font-size:15px;color:#444;">${textHtml}</span>` +
-          `</section>`);
+          const t = child.querySelector('.dot-text');
+          const textHtml = t ? t.innerHTML : child.querySelectorAll('span')[2]?.innerHTML || '';
+          out.push(`<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:20px 0 12px;border-collapse:collapse;border:none;">` +
+            `<tr>` +
+              `<td style="width:40px;vertical-align:middle;text-align:center;border:none;padding:0;">` +
+                `<span style="color:${T};font-size:18px;">●</span>` +
+              `</td>` +
+              `<td style="vertical-align:middle;border:none;padding:0 8px;">` +
+                `<span style="font-size:16px;font-weight:600;color:${T};">${textHtml}</span>` +
+              `</td>` +
+              `<td style="width:25%;vertical-align:middle;border:none;padding:0;">` +
+                `<span style="display:inline-block;width:100%;border-bottom:2px solid ${TL};font-size:1px;line-height:1px;">&nbsp;</span>` +
+              `</td>` +
+            `</tr>` +
+          `</table>`);
           break;
         }
 
         case 'underlineTitle': {
-          // 和编辑区一致：内联下划线标题（非居中）
-          const utxt = child.querySelector('span')?.textContent.trim() || child.textContent.trim();
-          out.push(`<section style="margin:18px 0 10px;"><span style="font-size:17px;font-weight:700;border-bottom:2px solid ${T};padding-bottom:3px;color:#333;">${utxt}</span></section>`);
+          out.push(`<section align="center" style="margin:24px 0 16px;padding:0;"><span style="font-size:18px;font-weight:700;color:${T};padding-bottom:10px;border-bottom:3px solid ${T};">${child.textContent.trim()}</span></section>`);
           break;
         }
 
         case 'cardTitle': {
-          // 和编辑区一致：内联紧凑卡片（不是全宽）
-          const ctxt = child.textContent.trim();
-          out.push(`<section style="margin:16px 0 10px;"><span style="display:inline-block;background:${TL};border-top:1px solid ${T};border-right:1px solid ${T};border-bottom:1px solid ${T};border-left:1px solid ${T};border-radius:8px;padding:7px 16px;font-weight:700;color:${T};font-size:15px;">${ctxt}</span></section>`);
+          out.push(`<section style="border-left:4px solid ${T};background:${TL};color:${T};padding:10px 18px;font-size:17px;font-weight:700;border-radius:8px;margin:16px 0;">${child.textContent.trim()}</section>`);
           break;
         }
 
         case 'stepTitle': {
-          // 更健壮的取法：取所有直接子元素
-          const allChildren = child.children;
-          let stepTxt = '', stepTextHtml = '';
-          for (const c of allChildren) {
-            if (c.tagName === 'B' || c.classList?.contains('step-num')) {
-              stepTxt = c.textContent.trim();
-            } else if (c.tagName === 'SPAN' || c.classList?.contains('step-text')) {
-              stepTextHtml = c.innerHTML || c.textContent.trim();
-            }
-          }
-          out.push(`<section style="display:flex;align-items:center;gap:10px;margin:16px 0 10px;">` +
-            `<span style="color:${T};font-size:18px;font-weight:800;">${stepTxt}</span>` +
-            `<span style="font-weight:700;font-size:16px;color:#222;">${stepTextHtml}</span>` +
-          `</section>`);
+          const sn = child.querySelector('b') || child.querySelector('.step-num');
+          const stxt = child.querySelector('span:last-child') || child.querySelector('.step-text');
+          const stepTxt = sn ? sn.textContent.trim() : '';
+          const stepTextHtml = stxt ? stxt.innerHTML : '';
+          out.push(`<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:28px 0 16px;border-collapse:collapse;border:none;">` +
+            `<tr>` +
+              `<td style="width:32px;vertical-align:middle;text-align:center;border:none;padding:0;">` +
+                `<span style="background:${T};color:${TC};width:32px;height:32px;border-radius:8px;text-align:center;line-height:32px;font-size:15px;font-weight:700;display:inline-block;">${stepTxt}</span>` +
+              `</td>` +
+              `<td style="vertical-align:middle;border:none;padding:0 0 0 10px;">` +
+                `<section style="font-size:17px;font-weight:700;color:#333;padding-bottom:6px;border-bottom:2px solid ${TL};margin:0;">${stepTextHtml}</section>` +
+              `</td>` +
+            `</tr>` +
+          `</table>`);
           break;
         }
 
@@ -306,11 +269,16 @@ export const useEditorStore = defineStore('editor', () => {
         }
 
         case 'highlightBlock': {
-          // 和编辑区一致：◆ + 色块背景文字
-          out.push(`<section style="display:flex;align-items:flex-start;gap:8px;padding:12px 16px;margin:14px 0;background:${TL};border-radius:8px;font-size:14px;color:#444;line-height:1.8;">` +
-            `<span style="font-size:16px;flex-shrink:0;">◆</span>` +
-            `<span>${txt}</span>` +
-          `</section>`);
+          out.push(`<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:16px 0;border-collapse:collapse;border:none;">` +
+            `<tr>` +
+              `<td style="border:none;padding:0;width:40px;vertical-align:top;text-align:center;">` +
+                `<span style="font-size:18px;color:${T};">◆</span>` +
+              `</td>` +
+              `<td style="border:none;padding:0 0 0 12px;background:${TL};">` +
+                `<section style="font-size:16px;color:#444;line-height:1.8;padding:14px 8px;">${txt}</section>` +
+              `</td>` +
+            `</tr>` +
+          `</table>`);
           break;
         }
 
@@ -362,19 +330,21 @@ export const useEditorStore = defineStore('editor', () => {
     return out.join('');
   };
 
-  // 预览用的计算属性（直接使用编辑器原始 HTML + 双层容器，保证预览和编辑区 100% 一致）
-  // 只有复制时才调用 buildWechatHTML() 转微信格式
+  // 预览用的计算属性（自动转换编辑器内容为公众号兼容HTML + 双层容器）
   const previewHTML = computed(() => {
     const app = appearance.value;
+    const T = currentThemeColor.value;
     const fs = app.fontSize;
 
     if (!editorContent.value || !editorContent.value.trim()) {
       return `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;display:flex;align-items:center;justify-content:center;min-height:300px;"><p style="color:#bbb;text-align:center;">在中间编辑区输入内容，或从左侧选择组件插入...</p></div>`;
     }
 
-    // 直接用原始内容，不做任何转换 → 预览 = 编辑区
-    const innerContent = editorContent.value;
+    const innerContent = buildWechatHTML(editorContent.value);
 
+    // 双层容器结构
+    // 外层：模拟手机/公众号阅读界面背景
+    // 内层：文章内容区域
     return `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;">
 <div style="background:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${app.contentPadding * (fs/16)}px ${Math.max(16, app.contentPadding * 1.5) * (fs/16)}px;font-size:${fs}px;line-height:${(1.8 * app.lineSpacing).toFixed(1)};color:#262626;">
 ${innerContent}
