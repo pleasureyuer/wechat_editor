@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>复制问题调试工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; padding: 20px; background: #f5f6f7; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { color: #333; margin-bottom: 20px; }
+    .section { background: #fff; padding: 20px; margin: 10px 0; border: 1px solid #e8eaed; border-radius: 8px; }
+    h2 { margin-top: 0; color: #555; font-size: 18px; }
+    textarea { width: 100%; height: 200px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace; font-size: 13px; resize: vertical; }
+    pre { background: #f8f8f8; padding: 15px; border: 1px solid #ddd; border-radius: 5px; overflow-x: auto; white-space: pre-wrap; font-size: 13px; max-height: 400px; overflow-y: auto; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #0066ff; color: #fff; border: none; border-radius: 5px; font-size: 14px; }
+    button:hover { background: #0052cc; }
+    button.secondary { background: #666; }
+    button.secondary:hover { background: #555; }
+    .error { color: #ff0000; font-weight: bold; padding: 10px; background: #ffe6e6; border: 1px solid #ff0000; border-radius: 5px; margin: 10px 0; }
+    .success { color: #00aa00; font-weight: bold; padding: 10px; background: #e6ffe6; border: 1px solid #00aa00; border-radius: 5px; margin: 10px 0; }
+    .warning { color: #ff8800; font-weight: bold; padding: 10px; background: #fff3e6; border: 1px solid #ff8800; border-radius: 5px; margin: 10px 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 复制问题调试工具</h1>
+    
+    <div class="section">
+      <h2>步骤1：粘贴编辑器HTML</h2>
+      <p>从编辑器中复制HTML内容，粘贴到下面的文本框中：</p>
+      <textarea id="inputHTML" placeholder="粘贴编辑器HTML内容..."></textarea>
+      <button onclick="loadTestData()">载入测试数据</button>
+      <button onclick="clearAll()">清空</button>
+    </div>
+
+    <div class="section">
+      <h2>步骤2：模拟转换</h2>
+      <button onclick="runConversion()">开始转换</button>
+      <div id="conversionStatus"></div>
+    </div>
+
+    <div class="grid">
+      <div class="section">
+        <h2>原始内容（格式化）</h2>
+        <pre id="rawFormatted">等待转换...</pre>
+      </div>
+
+      <div class="section">
+        <h2>转换后内容（格式化）</h2>
+        <pre id="convertedFormatted">等待转换...</pre>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>步骤3：对比分析</h2>
+      <button onclick="compareContent()">开始对比</button>
+      <div id="comparisonResult"></div>
+    </div>
+
+    <div class="section">
+      <h2>步骤4：测试复制</h2>
+      <button onclick="testCopy()">测试复制到剪贴板</button>
+      <div id="copyResult"></div>
+    </div>
+  </div>
+
+  <script>
+    // 模拟 buildWechatHTML 函数（简化版）
+    function buildWechatHTML(editorHTML) {
+      if (!editorHTML || !editorHTML.trim()) return '';
+      
+      const T = '#0066ff';
+      const TL = '#e6f0ff';
+      const TC = '#fff';
+      const fs = 16;
+      const lh = '1.8';
+      
+      let out = [];
+      let temp;
+      
+      temp = document.createElement('div');
+      temp.innerHTML = editorHTML;
+      
+      // 打印调试信息
+      console.log('[调试] 原始HTML:', editorHTML);
+      console.log('[调试] 子元素数量:', temp.children.length);
+      
+      for (let i = 0; i < temp.children.length; i++) {
+        const child = temp.children[i];
+        console.log(`[调试] 子元素${i}:`, child.tagName, child.innerHTML);
+      }
+      
+      for (const child of temp.children) {
+        // 普通段落
+        if (child.tagName === 'P' && !child.classList.contains('editable-block')) {
+          out.push(`<p style="margin:14px 0;line-height:${lh};color:#262626;font-size:${fs}px;text-align:justify;">${child.innerHTML}</p>`);
+          continue;
+        }
+        
+        // 分割线
+        if (child.tagName === 'HR') {
+          out.push(`<p><span style="display:inline-block;width:100%;height:1px;background-color:${TL};vertical-align:middle;font-size:1px;line-height:1px;">&nbsp;</span></p>`);
+          continue;
+        }
+        
+        // 标题标签
+        if (/^H[1-6]$/.test(child.tagName)) {
+          const tag = child.tagName.toLowerCase();
+          const sizeMap = { h1: '22px', h2: '20px', h3: '18px', h4: '16px', h5: '15px', h6: '14px' };
+          out.push(`<${tag} style="margin:${tag === 'h1' ? '28px' : '24px'} 0 12px;font-size:${sizeMap[tag] || '16px'};font-weight:700;color:#222;line-height:${lh};">${child.innerHTML}</${tag}>`);
+          continue;
+        }
+        
+        // 列表
+        if (child.tagName === 'UL' || child.tagName === 'OL') {
+          out.push(child.outerHTML);
+          continue;
+        }
+        
+        // 引用块
+        if (child.tagName === 'BLOCKQUOTE') {
+          out.push(`<blockquote style="border-left:4px solid ${T};background:#f7f7f7;padding:14px 18px;color:#595959;font-size:${fs}px;line-height:${lh};margin:16px 0;">${child.innerHTML}</blockquote>`);
+          continue;
+        }
+        
+        // 只处理 editable-block
+        if (!child.classList.contains('editable-block')) {
+          out.push(`<section style="margin:14px 0;font-size:${fs}px;line-height:${lh};color:#262626;">${child.innerHTML}</section>`);
+          continue;
+        }
+        
+        // 组件处理（省略，保留outerHTML）
+        out.push(child.outerHTML);
+      }
+      
+      return out.join('');
+    }
+
+    // 格式化HTML（简单缩进）
+    function formatHTML(html) {
+      let formatted = '';
+      let indent = 0;
+      const lines = html.split(/(<\/?[^>]+>)/g);
+      
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        if (line.match(/^<\//)) {
+          indent--;
+        }
+        
+        formatted += '  '.repeat(Math.max(0, indent)) + line + '\n';
+        
+        if (line.match(/^<[^\/!][^>]*[^\/]>$/)) {
+          indent++;
+        }
+      }
+      
+      return formatted;
+    }
+
+    function loadTestData() {
+      const testHTML = `<p>"这个表格你帮我改一下呗，我不太会用VLOOKUP。"</p><p>同事："……我也不会。"</p><p>我（领导）："那你去学啊。"</p><p>---</p><p>上面这段对话，是我编的。</p><p>但类似的对话，你一定经历过——</p>`;
+      document.getElementById('inputHTML').value = testHTML;
+      alert('已载入测试数据！');
+    }
+
+    function clearAll() {
+      document.getElementById('inputHTML').value = '';
+      document.getElementById('rawFormatted').textContent = '等待转换...';
+      document.getElementById('convertedFormatted').textContent = '等待转换...';
+      document.getElementById('conversionStatus').innerHTML = '';
+      document.getElementById('comparisonResult').innerHTML = '';
+      document.getElementById('copyResult').innerHTML = '';
+    }
+
+    function runConversion() {
+      const input = document.getElementById('inputHTML').value.trim();
+      if (!input) {
+        alert('请先粘贴编辑器HTML内容！');
+        return;
+      }
+
+      // 显示原始内容
+      document.getElementById('rawFormatted').textContent = formatHTML(input);
+      
+      // 执行转换
+      const converted = buildWechatHTML(input);
+      
+      // 显示转换后内容
+      document.getElementById('convertedFormatted').textContent = formatHTML(converted);
+      
+      // 显示状态
+      const status = document.getElementById('conversionStatus');
+      if (converted) {
+        status.innerHTML = '<div class="success">✓ 转换成功！</div>';
+      } else {
+        status.innerHTML = '<div class="error">✗ 转换失败！输出为空。</div>';
+      }
+      
+      // 保存到全局变量
+      window.testInput = input;
+      window.testOutput = converted;
+    }
+
+    function compareContent() {
+      if (!window.testInput || !window.testOutput) {
+        alert('请先执行转换！');
+        return;
+      }
+
+      const temp1 = document.createElement('div');
+      temp1.innerHTML = window.testInput;
+      const originalText = temp1.textContent || temp1.innerText || '';
+      
+      const temp2 = document.createElement('div');
+      temp2.innerHTML = window.testOutput;
+      const convertedText = temp2.textContent || temp2.innerText || '';
+      
+      const result = document.getElementById('comparisonResult');
+      
+      if (originalText === convertedText) {
+        result.innerHTML = '<div class="success">✓ 文本内容完全一致！</div>';
+      } else {
+        const originalLen = originalText.length;
+        const convertedLen = convertedText.length;
+        const diff = originalLen - convertedLen;
+        
+        let html = `<div class="warning">⚠️ 检测到可能的文本差异！</div>`;
+        html += `<p>原始文本长度: ${originalLen}</p>`;
+        html += `<p>转换后文本长度: ${convertedLen}</p>`;
+        html += `<p>差异: ${diff} 字符</p>`;
+        
+        if (diff > 0) {
+          html += '<div class="error">❌ 转换后文本更短，可能有内容丢失！</div>';
+          html += '<p>原始文本（前200字）:</p>';
+          html += `<pre>${originalText.substring(0, 200)}</pre>`;
+          html += '<p>转换后文本（前200字）:</p>';
+          html += `<pre>${convertedText.substring(0, 200)}</pre>`;
+        }
+        
+        result.innerHTML = html;
+      }
+    }
+
+    async function testCopy() {
+      if (!window.testOutput) {
+        alert('请先执行转换！');
+        return;
+      }
+
+      const html = `<div style="background:#f5efe6;padding:16px;border-radius:12px;"><div style="background:#ffffff;border-radius:15px;padding:32px 40px;font-size:16px;line-height:1.8;color:#262626;">${window.testOutput}</div></div>`;
+      
+      try {
+        if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+          const htmlBlob = new Blob([html], { type: 'text/html' });
+          const textBlob = new Blob([window.testOutput], { type: 'text/plain' });
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+          ]);
+          document.getElementById('copyResult').innerHTML = '<div class="success">✓ 已复制到剪贴板！请粘贴到微信公众号测试。</div>';
+        } else {
+          document.getElementById('copyResult').innerHTML = '<div class="warning">⚠️ 浏览器不支持 ClipboardItem API，请升级浏览器。</div>';
+        }
+      } catch (e) {
+        document.getElementById('copyResult').innerHTML = `<div class="error">✗ 复制失败：${e.message}</div>`;
+      }
+    }
+  </script>
+</body>
+</html>

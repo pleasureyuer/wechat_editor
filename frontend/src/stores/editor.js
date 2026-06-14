@@ -114,6 +114,51 @@ export const useEditorStore = defineStore('editor', () => {
       return editorHTML; // SSR fallback
     }
 
+    // 调试：打印所有直接子元素
+
+    // 修复：先规范化HTML，确保所有文本都在 <p> 标签内
+    // 问题：原始HTML可能有 <br> 标签和文本节点作为直接子元素，导致丢失
+    // 解决：遍历 childNodes，把文本节点和 <br> 标签包装成 <p> 标签
+    const normalizeNodes = (container) => {
+      const nodes = Array.from(container.childNodes);
+      let currentP = null;
+      
+      for (const node of nodes) {
+        // 文本节点
+        if (node.nodeType === 3) {
+          const text = node.textContent.trim();
+          if (text) {
+            if (!currentP) {
+              currentP = document.createElement('p');
+              container.insertBefore(currentP, node);
+            }
+            currentP.textContent += text + ' ';
+          }
+          container.removeChild(node);
+          continue;
+        }
+        
+        // <br> 标签：结束当前段落
+        if (node.nodeName === 'BR') {
+          currentP = null;
+          container.removeChild(node);
+          continue;
+        }
+        
+        // 元素节点
+        if (node.nodeType === 1) {
+          // 块级元素：结束当前段落
+          const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'BLOCKQUOTE', 'HR', 'DIV', 'SECTION'];
+          if (blockTags.includes(node.tagName)) {
+            currentP = null;
+          }
+          // 继续处理这个元素（它会留在 container 中）
+        }
+      }
+    };
+    
+    normalizeNodes(temp);
+
     for (const child of temp.children) {
       // 普通段落
       if (child.tagName === 'P' && !child.classList.contains('editable-block')) {

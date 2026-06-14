@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>复制功能调试工具</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+    .section { background: #fff; padding: 20px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; }
+    h2 { margin-top: 0; color: #333; }
+    pre { background: #f8f8f8; padding: 10px; border: 1px solid #ddd; overflow-x: auto; white-space: pre-wrap; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; background: #0066ff; color: #fff; border: none; border-radius: 5px; }
+    button:hover { background: #0052cc; }
+    .error { color: #ff0000; font-weight: bold; }
+    .success { color: #00aa00; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>复制功能调试工具</h1>
+  
+  <div class="section">
+    <h2>步骤1：获取编辑器原始HTML</h2>
+    <button onclick="getEditorHTML()">获取原始HTML</button>
+    <pre id="rawHTML">点击按钮获取...</pre>
+  </div>
+
+  <div class="section">
+    <h2>步骤2：模拟buildWechatHTML转换</h2>
+    <button onclick="simulateBuild()">模拟转换</button>
+    <pre id="convertedHTML">点击按钮获取...</pre>
+  </div>
+
+  <div class="section">
+    <h2>步骤3：对比差异</h2>
+    <button onclick="compareHTML()">对比</button>
+    <div id="comparison"></div>
+  </div>
+
+  <script>
+    // 模拟 store 的 computed 属性
+    const currentThemeColor = '#0066ff';
+    const currentThemeLight = '#e6f0ff';
+    
+    // 模拟 buildWechatHTML 函数
+    function buildWechatHTML(editorHTML) {
+      if (!editorHTML || !editorHTML.trim()) return '';
+      
+      const T = currentThemeColor;
+      const TL = currentThemeLight;
+      const TC = '#fff';
+      const fs = 16;
+      const lh = '1.8';
+      
+      let out = [];
+      let temp;
+      
+      temp = document.createElement('div');
+      temp.innerHTML = editorHTML;
+      
+      // 关键：检查 temp 的子元素
+      console.log('temp.children 数量:', temp.children.length);
+      console.log('temp.childNodes 数量:', temp.childNodes.length);
+      
+      for (const child of temp.children) {
+        // 普通段落
+        if (child.tagName === 'P' && !child.classList.contains('editable-block')) {
+          out.push(`<p style="margin:14px 0;line-height:${lh};color:#262626;font-size:${fs}px;text-align:justify;">${child.innerHTML}</p>`);
+          continue;
+        }
+        
+        // 其他标签...
+        // 这里省略其他case，只保留基本逻辑
+        
+        // 只处理 editable-block
+        if (!child.classList.contains('editable-block')) {
+          out.push(`<section style="margin:14px 0;font-size:${fs}px;line-height:${lh};color:#262626;">${child.innerHTML}</section>`);
+          continue;
+        }
+        
+        // 组件处理（省略）
+        out.push(child.outerHTML);
+      }
+      
+      return out.join('');
+    }
+    
+    function getEditorHTML() {
+      // 这里需要从实际的编辑器中获取
+      // 为了测试，我们模拟一段有问题的HTML
+      const testHTML = `
+        <p>"这个表格你帮我改一下呗，我不太会用VLOOKUP。"</p>
+        <p>同事："……我也不会。"</p>
+        <p>我（领导）："那你去学啊。"</p>
+        <p>---</p>
+        <p>上面这段对话，是我编的。</p>
+        <p>但类似的对话，你一定经历过——</p>
+      `;
+      
+      document.getElementById('rawHTML').textContent = testHTML;
+      window.testHTML = testHTML;
+    }
+    
+    function simulateBuild() {
+      if (!window.testHTML) {
+        alert('请先获取原始HTML！');
+        return;
+      }
+      
+      const converted = buildWechatHTML(window.testHTML);
+      document.getElementById('convertedHTML').textContent = converted;
+      window.convertedHTML = converted;
+    }
+    
+    function compareHTML() {
+      if (!window.testHTML || !window.convertedHTML) {
+        alert('请先完成前两步！');
+        return;
+      }
+      
+      const raw = window.testHTML;
+      const converted = window.convertedHTML;
+      
+      // 检查每段是否都在转换后的HTML中
+      const temp = document.createElement('div');
+      temp.innerHTML = raw;
+      
+      let missing = [];
+      for (const child of temp.children) {
+        const childHTML = child.outerHTML;
+        if (!converted.includes(child.innerHTML)) {
+          missing.push(childHTML);
+        }
+      }
+      
+      const result = document.getElementById('comparison');
+      if (missing.length > 0) {
+        result.innerHTML = '<p class="error">发现丢失的内容：</p>' + 
+          missing.map(m => '<pre>' + m + '</pre>').join('');
+      } else {
+        result.innerHTML = '<p class="success">✓ 所有内容都保留了！</p>';
+      }
+    }
+  </script>
+</body>
+</html>

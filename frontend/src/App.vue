@@ -188,12 +188,29 @@ const handleCopy = async () => {
     return;
   }
 
+  // 调试：打印原始内容
+
   const innerContent = editorStore.buildWechatHTML(content);
+  
+  // 调试：打印转换后的内容
+
   const app = editorStore.appearance;
   const fs = app.fontSize;
   const lh = (1.8 * app.lineSpacing).toFixed(1);
 
   const html = `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;"><div style="background:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${app.contentPadding * (fs/16)}px ${Math.max(16, app.contentPadding * 1.5) * (fs/16)}px;font-size:${fs}px;line-height:${lh};color:#262626;">${innerContent}</div></div>`;
+
+  // 调试：打印最终HTML
+
+  // 内容丢失检查：对比原始文本和转换后的文本
+  
+  
+  if (originalText.length > convertedText.length + 10) { // 允许小误差
+    console.warn('[handleCopy] ⚠️ 检测到可能的文本丢失！');
+    console.warn('原始文本:', originalText.substring(0, 200) + '...');
+    console.warn('转换后文本:', convertedText.substring(0, 200) + '...');
+    // 不阻止复制，只警告
+  }
 
   if (!html || html.includes('undefined')) {
     alert('生成内容异常（包含 undefined），请刷新页面后重试。');
