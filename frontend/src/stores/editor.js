@@ -114,9 +114,7 @@ export const useEditorStore = defineStore('editor', () => {
       return editorHTML; // SSR fallback
     }
 
-    // 调试：打印所有直接子元素
-
-    // 修复：先规范化HTML，确保所有文本都在 <p> 标签内
+    // 规范化：确保所有文本都在 <p> 标签内
     // 问题：原始HTML可能有 <br> 标签和文本节点作为直接子元素，导致丢失
     // 解决：遍历 childNodes，把文本节点和 <br> 标签包装成 <p> 标签
     const normalizeNodes = (container) => {
