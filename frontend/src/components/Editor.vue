@@ -242,8 +242,13 @@ function insertLink() {
 }
 
 function insertImg() {
-  const url = prompt('图片地址：', '')
-  if (url) run('insertImage', url)
+  const url = prompt('图片地址：\n\n⚠️ 请使用微信公众平台素材库的图片链接（已上传至公众号的图片），外部链接在公众号后台可能无法显示。', '')
+  if (!url) return
+  // 检测是否是微信 CDN 链接
+  if (!url.includes('mmbiz.qpic.cn') && !url.includes('mp.weixin.qq.com')) {
+    if (!confirm('⚠️ 该图片链接不是微信 CDN 地址，粘贴到公众号后台后可能无法显示。\n\n是否继续插入？')) return
+  }
+  run('insertImage', url)
 }
 
 function insertTable() {
@@ -300,8 +305,13 @@ function clearAll() {
 function getHTML() {
   return edRef.value?.innerHTML || ''
 }
+function setContent(html) {
+  if (!edRef.value) return
+  edRef.value.innerHTML = html
+  onInput()
+}
 
-defineExpose({ insertHTML, clear: clearAll, getContent: getHTML })
+defineExpose({ insertHTML, clear: clearAll, getContent: getHTML, setContent })
 
 function onClick(e) {
   if (showEmj.value && !e.target.closest('.pop-emj') && !e.target.closest('.tb-btn')) {

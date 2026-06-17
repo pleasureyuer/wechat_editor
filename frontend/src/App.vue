@@ -16,6 +16,7 @@
         <LeftSidebar
           @insert-component="handleInsertComponent"
           @apply-markdown="handleApplyMarkdown"
+          @load-full-sample="handleLoadFullSample"
         />
       </aside>
 
@@ -108,7 +109,7 @@ const componentHTML = (comp) => {
       return `<div class="editable-block style-quote-block" data-style="quoteBlock">引用一段话或名人名言，让文章更有说服力和深度。</div>`;
 
     case 'infoBox':
-      return `<div class="editable-block style-info-box" data-style="infoBox" style="background:${TL};border-radius:8px;padding:14px 18px;margin:14px 0;font-size:14px;color:#555;border:1px solid rgba(0,102,255,0.1);">ℹ️ 这是一条提示信息。</div>`;
+      return `<div class="editable-block style-info-box" data-style="infoBox" style="background:${TL};border-radius:8px;padding:14px 18px;margin:14px 0;font-size:14px;color:#555;border:1px solid ${TL};">ℹ️ 这是一条提示信息。</div>`;
 
     case 'disclaimer':
       return `<div class="editable-block style-disclaimer" data-style="disclaimer">本文为个人真实职场感悟，内容真实原创，仅由AI辅助优化排版、梳理语句。</div>`;
@@ -117,7 +118,7 @@ const componentHTML = (comp) => {
       return `<div class="editable-block style-divider" data-style="dividerSolid" style="height:1px;background:${TL}"></div>`;
 
     case 'dividerDashed':
-      return `<div class="editable-block style-divider" data-style="dividerDashed" style="height:1px;background:repeating-linear-gradient(90deg,${TL} 0,${TL} 6px,transparent 6px,transparent 10px)"></div>`;
+      return `<div class="editable-block style-divider" data-style="dividerDashed" style="height:0px;border-top:1px dashed ${T};margin:20px 0;"></div>`;
 
     case 'dividerDot':
       return `<div class="editable-block style-divider" data-style="dividerDot" style="height:1px;background:repeating-linear-gradient(90deg,${TL} 0,${TL} 3px,transparent 3px,transparent 7px);opacity:0.6"></div>`;
@@ -137,6 +138,42 @@ const componentHTML = (comp) => {
 const handleInsertComponent = (comp) => {
   const html = componentHTML(comp);
   editorRef.value?.insertHTML(html);
+};
+
+// 加载完整示例：清空编辑器后一次性插入所有组件 HTML
+const handleLoadFullSample = () => {
+  const allComponents = [
+    { type: 'gradientTitle' },
+    { type: 'numberTitle' },
+    { type: 'pillTitle' },
+    { type: 'tagTitle' },
+    { type: 'leftLineTitle' },
+    { type: 'rightLineTitle' },
+    { type: 'centerLineTitle' },
+    { type: 'circleIconTitle' },
+    { type: 'dotLine' },
+    { type: 'underlineTitle' },
+    { type: 'cardTitle' },
+    { type: 'stepTitle' },
+    { type: 'softPillTitle' },
+    { type: 'dividerSolid' },
+    { type: 'dividerDashed' },
+    { type: 'dividerDot' },
+    { type: 'dividerThick' },
+    { type: 'highlightBlock' },
+    { type: 'quoteBlock' },
+    { type: 'infoBox' },
+    { type: 'cardBox' },
+    { type: 'disclaimer' },
+    { type: 'spacer' },
+  ];
+
+  const allHTML = allComponents.map(c => componentHTML(c)).join('\n');
+
+  // 用 setContent 直接写 DOM（内部会触发 onInput → 自动同步到 store → 预览区自动更新）
+  if (editorRef.value) {
+    editorRef.value.setContent(allHTML);
+  }
 };
 
 // Markdown 一键排版（简化版）
@@ -196,7 +233,7 @@ const handleCopy = async () => {
   const fs = app.fontSize;
   const lh = (1.8 * app.lineSpacing).toFixed(1);
 
-  const html = `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;"><div style="background:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${app.contentPadding * (fs/16)}px ${Math.max(16, app.contentPadding * 1.5) * (fs/16)}px;font-size:${fs}px;line-height:${lh};color:#262626;">${innerContent}</div></div>`;
+  const html = `<div style="background-color:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;"><div style="background-color:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${app.contentPadding * (fs/16)}px ${Math.max(16, app.contentPadding * 1.5) * (fs/16)}px;font-size:${fs}px;line-height:${lh};color:#262626;">${innerContent}</div></div>`;
 
   if (!html || html.includes('undefined')) {
     alert('生成内容异常（包含 undefined），请刷新页面后重试。');

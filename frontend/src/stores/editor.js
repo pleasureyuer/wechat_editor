@@ -186,7 +186,7 @@ export const useEditorStore = defineStore('editor', () => {
 
       // 引用块
       if (child.tagName === 'BLOCKQUOTE') {
-        out.push(`<blockquote style="border-left:4px solid ${T};background:#f7f7f7;padding:14px 18px;color:#595959;font-size:${fs}px;line-height:${lh};margin:16px 0;">${child.innerHTML}</blockquote>`);
+        out.push(`<blockquote style="border-left:4px solid ${T};background-color:#f7f7f7;padding:14px 18px;color:#595959;font-size:${fs}px;line-height:${lh};margin:16px 0;">${child.innerHTML}</blockquote>`);
         continue;
       }
 
@@ -207,10 +207,10 @@ export const useEditorStore = defineStore('editor', () => {
           const t = child.querySelector('.title-text');
           const numTxt = n ? n.textContent.trim() : '';
           const textHtml = t ? t.innerHTML : '';
-          // 和编辑区一致：小圆圈 + 文字（不用大表格）
-          out.push(`<section style="display:flex;align-items:center;gap:10px;margin:18px 0 10px;">` +
-            `<span style="background:${T};color:${TC};width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:13px;font-weight:700;flex-shrink:0;display:inline-block;">${numTxt}</span>` +
-            `<span style="font-size:17px;font-weight:700;color:#222;">${textHtml}</span>` +
+          // 【方案Beta】全部改用 flex（pillTitle 已验证微信支持 display:flex）
+          out.push(`<section style="display:flex;align-items:center;margin:18px 0 10px;">` +
+            `<span style="background-color:${T};color:${TC};display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:13px;font-weight:700;flex-shrink:0;">${numTxt}</span>` +
+            `<span style="font-size:17px;font-weight:700;color:#222;margin-left:8px;">${textHtml}</span>` +
           `</section>`);
           break;
         }
@@ -234,10 +234,11 @@ export const useEditorStore = defineStore('editor', () => {
           const t = child.querySelector('.pill-text');
           const pillTxt = p ? p.textContent.trim() : '';
           const textHtml = t ? t.innerHTML : '';
-          // 和编辑区一致：小胶囊 + 文字
-          out.push(`<section style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;">` +
-            `<span style="background:${T};color:${TC};min-width:22px;height:22px;padding:0 7px;border-radius:11px;text-align:center;line-height:22px;font-size:12px;font-weight:700;flex-shrink:0;display:inline-block;">${pillTxt}</span>` +
-            `<span style="font-size:16px;font-weight:600;color:#222;">${textHtml}</span>` +
+          // 【方案Alpha】pillTitle 回退 flex 内联样式，实测微信是否支持 flex
+          // 其他组件保持 table 布局不动，方便对比验证
+          out.push(`<section style="display:flex;align-items:center;margin:18px 0 10px;">` +
+            `<span style="background-color:${T};color:${TC};display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:11px;font-size:12px;font-weight:700;flex-shrink:0;">${pillTxt}</span>` +
+            `<span style="font-size:16px;font-weight:600;color:#222;margin-left:8px;">${textHtml}</span>` +
           `</section>`);
           break;
         }
@@ -248,7 +249,7 @@ export const useEditorStore = defineStore('editor', () => {
           const tagSpan = clone.querySelector('span');
           if (tagSpan) tagSpan.remove();
           const titleText = clone.textContent.trim();
-          out.push(`<section style="margin:20px 0 12px;"><span style="background:#f0f0f0;color:#666;padding:2px 10px;border-radius:10px;font-size:11px;margin-right:8px;">标签</span><span style="font-size:16px;font-weight:600;">${titleText}</span></section>`);
+          out.push(`<section style="margin:20px 0 12px;"><span style="background-color:#f0f0f0;color:#666;padding:2px 10px;border-radius:10px;font-size:11px;margin-right:4px;">标签</span><span style="font-size:16px;font-weight:600;">${titleText}</span></section>`);
           break;
         }
 
@@ -276,37 +277,22 @@ export const useEditorStore = defineStore('editor', () => {
         }
 
         case 'circleIconTitle': {
-          // 用 child.children 只取直接子元素，不用 querySelectorAll（会找到所有后代）
-          let iconTxt = '💡', titleText = '';
-          for (const c of child.children) {
-            if (c.tagName === 'SPAN' && !titleText) {
-              // 第一个直接子 span：取图标文字
-              iconTxt = c.textContent.trim() || '💡';
-            } else if ((c.tagName === 'SPAN' || c.tagName === 'DIV' || typeof c.textContent === 'string') && !titleText) {
-              // 第二个元素（或非span的文本节点）：取标题
-              titleText = c.innerHTML || c.textContent.trim() || '';
-            }
-          }
-          // 如果没从 children 取到，用 textContent 去掉图标部分作为 fallback
-          if (!titleText) {
-            const full = child.textContent.trim();
-            titleText = full.replace(iconTxt, '').trim();
-          }
-          out.push(`<section style="display:flex;align-items:center;gap:10px;margin:16px 0 10px;">` +
-            `<span style="background:${T};color:${TC};width:26px;height:26px;border-radius:50%;text-align:center;line-height:26px;font-size:13px;flex-shrink:0;display:inline-block;">${iconTxt}</span>` +
-            `<span style="font-size:17px;font-weight:700;color:#333;">${titleText}</span>` +
+          const spans = Array.from(child.children).filter(c => c.tagName === 'SPAN');
+          const iconTxt = (spans.length > 0 ? spans[0].textContent.trim() : '') || '💡';
+          const titleText = spans.length > 1 ? (spans[1].innerHTML || spans[1].textContent.trim() || '') : '';
+          out.push(`<section style="display:flex;align-items:center;margin:16px 0 10px;">` +
+            `<span style="background-color:${T};color:${TC};display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;font-size:13px;flex-shrink:0;">${iconTxt}</span>` +
+            `<span style="font-size:17px;font-weight:700;color:#333;margin-left:10px;">${titleText}</span>` +
           `</section>`);
           break;
         }
 
         case 'dotLine': {
-          // 和编辑区一致：圆点 + 横线 + 文字
-          const spans = child.querySelectorAll('span');
-          const textHtml = spans.length >= 3 ? spans[2].innerHTML : (child.querySelector('.dot-text')?.innerHTML || child.textContent.trim());
-          out.push(`<section style="display:flex;align-items:center;gap:8px;margin:16px 0;">` +
-            `<span style="width:8px;height:8px;border-radius:50%;background:${T};flex-shrink:0;display:inline-block;"></span>` +
-            `<span style="flex:1;height:1px;background:#ddd;display:inline-block;"></span>` +
-            `<span style="font-size:15px;color:#444;">${textHtml}</span>` +
+          const textHtml = child.querySelector('.dot-text')?.innerHTML || child.textContent.trim() || '';
+          out.push(`<section style="display:flex;align-items:center;margin:16px 0;">` +
+            `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background-color:${T};flex-shrink:0;"></span>` +
+            `<span style="color:#ddd;font-size:1px;flex:1;margin:0 6px;overflow:hidden;">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>` +
+            `<span style="font-size:15px;color:#444;white-space:nowrap;flex-shrink:0;">${textHtml}</span>` +
           `</section>`);
           break;
         }
@@ -321,12 +307,11 @@ export const useEditorStore = defineStore('editor', () => {
         case 'cardTitle': {
           // 和编辑区一致：内联紧凑卡片（不是全宽）
           const ctxt = child.textContent.trim();
-          out.push(`<section style="margin:16px 0 10px;"><span style="display:inline-block;background:${TL};border-top:1px solid ${T};border-right:1px solid ${T};border-bottom:1px solid ${T};border-left:1px solid ${T};border-radius:8px;padding:7px 16px;font-weight:700;color:${T};font-size:15px;">${ctxt}</span></section>`);
+          out.push(`<section style="margin:16px 0 10px;"><span style="display:inline-block;background-color:${TL};border-top:1px solid ${T};border-right:1px solid ${T};border-bottom:1px solid ${T};border-left:1px solid ${T};border-radius:8px;padding:7px 16px;font-weight:700;color:${T};font-size:15px;">${ctxt}</span></section>`);
           break;
         }
 
         case 'stepTitle': {
-          // 更健壮的取法：取所有直接子元素
           const allChildren = child.children;
           let stepTxt = '', stepTextHtml = '';
           for (const c of allChildren) {
@@ -336,9 +321,9 @@ export const useEditorStore = defineStore('editor', () => {
               stepTextHtml = c.innerHTML || c.textContent.trim();
             }
           }
-          out.push(`<section style="display:flex;align-items:center;gap:10px;margin:16px 0 10px;">` +
-            `<span style="color:${T};font-size:18px;font-weight:800;">${stepTxt}</span>` +
-            `<span style="font-weight:700;font-size:16px;color:#222;">${stepTextHtml}</span>` +
+          out.push(`<section style="display:flex;align-items:center;margin:16px 0 10px;">` +
+            `<span style="color:${T};font-size:18px;font-weight:800;flex-shrink:0;">${stepTxt}</span>` +
+            `<span style="font-weight:700;font-size:16px;color:#222;margin-left:10px;">${stepTextHtml}</span>` +
           `</section>`);
           break;
         }
@@ -350,20 +335,17 @@ export const useEditorStore = defineStore('editor', () => {
 
         case 'highlightBlock': {
           // 和编辑区一致：◆ + 色块背景文字
-          out.push(`<section style="display:flex;align-items:flex-start;gap:8px;padding:12px 16px;margin:14px 0;background:${TL};border-radius:8px;font-size:14px;color:#444;line-height:1.8;">` +
-            `<span style="font-size:16px;flex-shrink:0;">◆</span>` +
-            `<span>${txt}</span>` +
-          `</section>`);
+          out.push(`<section style="background-color:${TL};border-radius:8px;padding:12px 16px;margin:14px 0;font-size:14px;color:#444;line-height:1.8;"><span style="font-size:16px;">◆</span>&nbsp;${txt}</section>`);
           break;
         }
 
         case 'quoteBlock': {
-          out.push(`<blockquote style="border-left:4px solid ${T};background:#f7f7f7;padding:14px 18px;color:#595959;font-size:16px;line-height:1.8;margin:16px 0;">${child.textContent}</blockquote>`);
+          out.push(`<blockquote style="border-left:4px solid ${T};background-color:#f7f7f7;padding:14px 18px;color:#595959;font-size:16px;line-height:1.8;margin:16px 0;">${child.textContent}</blockquote>`);
           break;
         }
 
         case 'infoBox': {
-          out.push(`<section style="background:${TL};border-top:1px solid rgba(0,102,255,0.1);border-right:1px solid rgba(0,102,255,0.1);border-bottom:1px solid rgba(0,102,255,0.1);border-left:1px solid rgba(0,102,255,0.1);border-radius:8px;padding:14px 18px;margin:14px 0;font-size:14px;color:#555;">${txt}</section>`);
+          out.push(`<section style="background-color:${TL};border-top:1px solid ${TL};border-right:1px solid ${TL};border-bottom:1px solid ${TL};border-left:1px solid ${TL};border-radius:8px;padding:14px 18px;margin:14px 0;font-size:14px;color:#555;">${txt}</section>`);
           break;
         }
 
@@ -378,7 +360,7 @@ export const useEditorStore = defineStore('editor', () => {
         }
 
         case 'dividerDashed': {
-          out.push(`<p><span style="display:inline-block;width:100%;height:1px;background:repeating-linear-gradient(90deg,${TL} 0,${TL} 6px,transparent 6px,transparent 10px);vertical-align:middle;font-size:1px;line-height:1px;">&nbsp;</span></p>`);
+          out.push(`<p><span style="display:inline-block;width:100%;border-top:1px dashed ${T};height:1px;font-size:1px;line-height:1px;">&nbsp;</span></p>`);
           break;
         }
 
@@ -405,24 +387,40 @@ export const useEditorStore = defineStore('editor', () => {
     return out.join('');
   };
 
-  // 预览用的计算属性（直接使用编辑器原始 HTML + 双层容器，保证预览和编辑区 100% 一致）
-  // 只有复制时才调用 buildWechatHTML() 转微信格式
+  // 预览用计算属性：使用 buildWechatHTML() 输出，确保「预览 = 微信渲染效果」完全一致
+  // previewHTML：优先用 buildWechatHTML 转微信格式，出错时降级显示原始内容并附错误提示
   const previewHTML = computed(() => {
     const app = appearance.value;
-    const fs = app.fontSize;
 
     if (!editorContent.value || !editorContent.value.trim()) {
-      return `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;display:flex;align-items:center;justify-content:center;min-height:300px;"><p style="color:#bbb;text-align:center;">在中间编辑区输入内容，或从左侧选择组件插入...</p></div>`;
+      return `<div style="background-color:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;display:flex;align-items:center;justify-content:center;min-height:300px;"><p style="color:#bbb;text-align:center;">在中间编辑区输入内容，或从左侧选择组件插入...</p></div>`;
     }
 
-    // 直接用原始内容，不做任何转换 → 预览 = 编辑区
-    const innerContent = editorContent.value;
+    try {
+      const innerContent = buildWechatHTML(editorContent.value);
 
-    return `<div style="background:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;">
-<div style="background:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${app.contentPadding * (fs/16)}px ${Math.max(16, app.contentPadding * 1.5) * (fs/16)}px;font-size:${fs}px;line-height:${(1.8 * app.lineSpacing).toFixed(1)};color:#262626;">
+      const fs = app.fontSize;
+      const cpad = app.contentPadding * (fs / 16);
+      const hpad = Math.max(16, app.contentPadding * 1.5) * (fs / 16);
+      const lh = (1.8 * app.lineSpacing).toFixed(1);
+
+      return `<div style="background-color:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;">
+<div style="background-color:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${cpad}px ${hpad}px;font-size:${fs}px;line-height:${lh};color:#262626;">
 ${innerContent}
 </div>
 </div>`;
+    } catch (e) {
+      // 出错时降级：显示原始内容 + 错误提示
+      const fs = app.fontSize;
+      const cpad = app.contentPadding * (fs / 16);
+      const hpad = Math.max(16, app.contentPadding * 1.5) * (fs / 16);
+      return `<div style="background-color:${app.outerBgColor};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;">
+<div style="background-color:${app.contentBgColor};border-radius:${app.contentRadius}px;padding:${cpad}px ${hpad}px;font-size:${fs}px;line-height:${(1.8*app.lineSpacing).toFixed(1)};color:#262626;">
+<p style="color:red;font-size:13px;background:#fee;padding:8px 12px;border-radius:6px;margin:14px 0;">⚠️ previewHTML 渲染出错：${e.message || e}</p>
+${editorContent.value}
+</div>
+</div>`;
+    }
   });
 
   return {
