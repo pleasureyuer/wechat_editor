@@ -74,7 +74,7 @@ async function getAccessToken() {
   return tokenCache.token;
 }
 
-// ── 上传图片到微信 CDN ────────────────────────────────────────
+// ── 上传图片到微信 CDN（正文图片，返回 url）───────────────────
 async function uploadImageToWechat(imageUrl, token) {
   try {
     const imgRes = await fetch(imageUrl);
@@ -92,10 +92,37 @@ async function uploadImageToWechat(imageUrl, token) {
   } catch { return null; }
 }
 
+// ── 上传图片到微信素材库（封面图，返回 media_id）───────────────
+async function uploadMaterialToWechat(base64, token) {
+  const match = base64.match(/^data:image\/(jpeg|png|gif|jpg|webp);base64,(.+)$/s);
+  if (!match) throw new Error('仅支持 JPEG/PNG/GIF/WEBP 格式的 base64 图片');
+  const mimeType = 'image/' + (match[1] === 'jpeg' ? 'jpeg' : match[1]);
+  const ext      = match[1] === 'jpeg' ? 'jpg' : match[1];
+  const imageBuffer = Buffer.from(match[2], 'base64');
+
+  const boundary = '----FormBoundary' + Math.random().toString(16).slice(2);
+  const crlf = '\r\n', dashes = '--';
+  const head = Buffer.from(
+    dashes + boundary + crlf +
+    'Content-Disposition: form-data; name="media"; filename="cover.' + ext + '"' + crlf +
+    'Content-Type: ' + mimeType + crlf + crlf
+  );
+  const tail = Buffer.from(crlf + dashes + boundary + dashes + crlf);
+  const body = Buffer.concat([head, imageBuffer, tail]);
+
+  const res = await fetch(
+    `${WECHAT_API}/material/add_material?access_token=${token}&type=image`,
+    { method: 'POST', headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary, 'Content-Length': String(body.length) }, body }
+  );
+  const data = await res.json();
+  if (!data.media_id) throw new Error(data.errmsg || '上传素材失败');
+  return data.media_id;
+}
+
 // ── API: 推送到公众号草稿箱 ────────────────────────────────────
 app.post('/api/wechat/draft', async (req, res) => {
   try {
-    const { title, content, author } = req.body;
+    const { title, content, author, cover_base64 } = req.body;
     if (!title)   return res.status(400).json({ success: false, error: '缺少标题' });
     if (!content) return res.status(400).json({ success: false, error: '缺少内容' });
 
@@ -124,32 +151,49 @@ app.post('/api/wechat/draft', async (req, res) => {
       }
     }
 
-    // 推送草稿 — 用内置图片 URL 做封面（取正文第一张）
+    // ── 封面图处理 ─────────────────────────────────────────────
     let thumbMediaId = '';
-    const firstImgMatch = processedContent.match(/<img[^>]+src="([^"]+)"/);
-    if (firstImgMatch) {
+
+    // 1️⃣ 优先使用前端传来的封面 base64
+    if (cover_base64) {
       try {
-        const coverUrl = firstImgMatch[1];
-        const imgRes = await fetch(coverUrl);
-        if (imgRes.ok) {
-          const buf  = Buffer.from(await imgRes.arrayBuffer());
-          const ct   = imgRes.headers.get('content-type') || 'image/jpeg';
-          const form = new FormData();
-          form.append('media', new Blob([buf], { type: ct }), 'cover.jpg');
-          const covRes  = await fetch(`${WECHAT_API}/material/add_material?access_token=${token}&type=image`, { method: 'POST', body: form });
-          const covData = await covRes.json();
-          thumbMediaId = covData.media_id || '';
-        }
-      } catch {}
+        thumbMediaId = await uploadMaterialToWechat(cover_base64, token);
+      } catch (e) {
+        // 前端封面上传失败不阻断流程，继续尝试后备方案
+        console.log('[draft] 前端封面上传失败:', e.message);
+      }
     }
 
+    // 2️⃣ 后备：取正文第一张图做封面
+    if (!thumbMediaId) {
+      const firstImgMatch = processedContent.match(/<img[^>]+src="([^"]+)"/);
+      if (firstImgMatch) {
+        try {
+          const coverUrl = firstImgMatch[1];
+          const imgRes = await fetch(coverUrl);
+          if (imgRes.ok) {
+            const buf  = Buffer.from(await imgRes.arrayBuffer());
+            const ct   = imgRes.headers.get('content-type') || 'image/jpeg';
+            const form = new FormData();
+            form.append('media', new Blob([buf], { type: ct }), 'cover.jpg');
+            const covRes  = await fetch(`${WECHAT_API}/material/add_material?access_token=${token}&type=image`, { method: 'POST', body: form });
+            const covData = await covRes.json();
+            thumbMediaId = covData.media_id || '';
+          }
+        } catch {}
+      }
+    }
+
+    // 构建 article — 注意：thumb_media_id 为空时不传该字段（否则微信报 invalid media_id）
     const article = {
       title,
       content: processedContent,
-      thumb_media_id: thumbMediaId || '',
-      show_cover_pic: thumbMediaId ? 1 : 0,
       need_open_comment: 0,
     };
+    if (thumbMediaId) {
+      article.thumb_media_id = thumbMediaId;
+      article.show_cover_pic = 1;
+    }
     if (author) article.author = author;
 
     const draftRes = await fetch(`${WECHAT_API}/draft/add?access_token=${token}`, {
@@ -175,6 +219,26 @@ app.post('/api/wechat/draft', async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// ── API: 上传图片到微信素材库（封面图上传，返回 media_id）────
+app.post('/api/upload/image', async (req, res) => {
+  try {
+    const { base64 } = req.body;
+    if (!base64) return res.status(400).json({ errcode: -1, errmsg: '缺少 base64 图片数据' });
+
+    let token;
+    try {
+      token = await getAccessToken();
+    } catch (e) {
+      return res.status(500).json({ errcode: -1, errmsg: e.message });
+    }
+
+    const mediaId = await uploadMaterialToWechat(base64, token);
+    res.json({ media_id: mediaId });
+  } catch (e) {
+    res.status(500).json({ errcode: -1, errmsg: e.message });
   }
 });
 

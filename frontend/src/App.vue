@@ -30,6 +30,42 @@
         <RightPanel @copy="handleCopy" @export="handleExport" />
       </aside>
     </main>
+
+    <!-- 推送确认弹窗（封面图选择） -->
+    <div v-if="showSyncDialog" class="sync-modal-overlay" @click.self="showSyncDialog = false">
+      <div class="sync-modal">
+        <h3 class="sync-modal-title">📤 同步到公众号草稿箱</h3>
+
+        <div class="sync-modal-field">
+          <label>文章标题</label>
+          <div class="sync-title-text">{{ syncTitle }}</div>
+        </div>
+
+        <div class="sync-modal-field">
+          <label>封面图 <span class="sync-hint">（900×383，自动生成或手动上传）</span></label>
+          <div class="sync-cover-preview">
+            <img v-if="coverDataUrl" :src="coverDataUrl" class="sync-cover-img" />
+            <div v-else class="sync-cover-empty">点击下方按钮选择或生成封面图</div>
+          </div>
+          <div class="sync-cover-actions">
+            <label class="sync-btn-upload">
+              📁 上传图片
+              <input type="file" accept="image/*" @change="handleCoverFileSelect" hidden />
+            </label>
+            <button class="sync-btn-gen" @click="coverDataUrl = ''; generateDefaultCover(syncTitle).then(v => coverDataUrl = v)">
+              🎨 自动生成
+            </button>
+          </div>
+        </div>
+
+        <div class="sync-modal-actions">
+          <button class="sync-btn-cancel" @click="showSyncDialog = false">取消</button>
+          <button class="sync-btn-confirm" @click="doSyncToWechat" :disabled="pushLoading">
+            {{ pushLoading ? '⏳ 推送中...' : '✅ 确认同步到草稿箱' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -330,6 +366,89 @@ const handleClear = () => {
 
 // 推送到公众号草稿箱
 const pushLoading = ref(false);
+const showSyncDialog = ref(false);
+const syncTitle = ref('');
+const syncContent = ref('');
+const coverDataUrl = ref('');   // Canvas 生成或用户选择的封面 base64
+const coverUploading = ref(false);
+
+// 用 Canvas 生成带文章标题的默认封面图（900×383，微信封面推荐尺寸）
+const generateDefaultCover = (title) => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width  = 900;
+    canvas.height = 383;
+    const ctx = canvas.getContext('2d');
+
+    // 取当前主题色
+    const TC = editorStore.currentThemeColor || '#0066ff';
+    const TL = editorStore.currentThemeLight || '#e6f0ff';
+
+    // 背景：主题色渐变
+    const grad = ctx.createLinearGradient(0, 0, 900, 383);
+    grad.addColorStop(0, TC);
+    grad.addColorStop(1, TL);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 900, 383);
+
+    // 顶部装饰弧线
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 80;
+    ctx.beginPath();
+    ctx.arc(450, -60, 360, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 底部装饰弧线
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 60;
+    ctx.beginPath();
+    ctx.arc(200, 500, 320, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 中间分割线
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(180, 198);
+    ctx.lineTo(720, 198);
+    ctx.stroke();
+
+    // 文章标题（自动换行）
+    let displayTitle = title || '公众号文章';
+    if (displayTitle.length > 30) displayTitle = displayTitle.substring(0, 30) + '…';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 38px "PingFang SC","Microsoft YaHei",sans-serif';
+
+    const maxChars = 16;
+    const lines = [];
+    for (let i = 0; i < displayTitle.length; i += maxChars) {
+      lines.push(displayTitle.substring(i, i + maxChars));
+    }
+    if (lines.length > 3) lines.splice(3);
+
+    const lineHeight = 52;
+    const totalH = lines.length * lineHeight;
+    const startY = 198 - totalH / 2 + lineHeight / 2;
+    lines.forEach((line, idx) => {
+      ctx.fillText(line, 450, startY + idx * lineHeight);
+    });
+
+    // 底部小字
+    ctx.font = '18px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('点击阅读全文 →', 450, 320);
+
+    // 右上角装饰圆
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.arc(780, 80, 60, 0, Math.PI * 2);
+    ctx.fill();
+
+    resolve(canvas.toDataURL('image/png'));
+  });
+};
+
 const handlePushWechat = async (detail) => {
   const content = editorRef.value?.getContent() || '';
   if (!content.trim()) {
@@ -337,32 +456,64 @@ const handlePushWechat = async (detail) => {
     return;
   }
 
+  // 提取标题
+  const tmp = document.createElement('div');
+  tmp.innerHTML = content;
+  const h = tmp.querySelector('h1, h2, h3');
+  const title = h ? h.textContent.trim() : '未命名文章';
+  const wechatHtml = editorStore.buildWechatHTML(content);
+
+  syncTitle.value = title;
+  syncContent.value = wechatHtml;
+  coverDataUrl.value = '';
+  coverUploading.value = false;
+
+  // 自动生成默认封面预览
+  coverDataUrl.value = await generateDefaultCover(title);
+  showSyncDialog.value = true;
+};
+
+// 用户选择封面图片
+const handleCoverFileSelect = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    coverDataUrl.value = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+// 执行同步
+const doSyncToWechat = async () => {
   pushLoading.value = true;
   try {
-    // 提取标题（取第一个 h1 或 h2）
-    const tmp = document.createElement('div');
-    tmp.innerHTML = content;
-    const h = tmp.querySelector('h1, h2, h3');
-    const title = h ? h.textContent.trim() : '未命名文章';
-
-    // 生成微信兼容 HTML
-    const wechatHtml = editorStore.buildWechatHTML(content);
+    // 先上传封面图获取 media_id
+    let coverBase64 = null;
+    if (coverDataUrl.value) {
+      coverBase64 = coverDataUrl.value;
+    }
 
     const res = await fetch(`/api/wechat/draft`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, content: wechatHtml }),
+      body: JSON.stringify({
+        title: syncTitle.value,
+        content: syncContent.value,
+        cover_base64: coverBase64,
+      }),
     });
 
     const data = await res.json();
     if (data.success) {
+      showSyncDialog.value = false;
       alert(`✅ ${data.message}`);
     } else {
       const hint = data.hint ? `\n\n${data.hint}` : '';
       alert(`❌ ${data.error}${hint}`);
     }
   } catch (e) {
-    alert('❌ 推送失败：' + e.message + '\n\n请确认后端服务已启动（http://localhost:3000/api/health）');
+    alert('❌ 推送失败：' + e.message + '\n\n请确认后端服务已启动');
   } finally {
     pushLoading.value = false;
   }
@@ -389,4 +540,48 @@ html, body, #app { height: 100%; width: 100%; overflow: hidden; font-family: -ap
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #c1c4c9; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #999; }
+
+/* ====== 同步弹窗 ====== */
+.sync-modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.sync-modal {
+  background: #fff; border-radius: 14px; padding: 32px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+}
+.sync-modal-title { font-size: 18px; font-weight: 700; color: #1a1a1a; margin: 0 0 20px; }
+.sync-modal-field { margin-bottom: 18px; }
+.sync-modal-field label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+.sync-hint { font-weight: 400; color: #999; font-size: 12px; }
+.sync-title-text { padding: 10px 14px; background: #f7f8fa; border-radius: 8px; font-size: 14px; color: #333; border: 1px solid #e8eaed; }
+.sync-cover-preview {
+  width: 100%; aspect-ratio: 900/383; background: #f5f6f7; border-radius: 10px; overflow: hidden;
+  border: 2px dashed #d9dce1; display: flex; align-items: center; justify-content: center; margin-bottom: 10px;
+}
+.sync-cover-img { width: 100%; height: 100%; object-fit: cover; }
+.sync-cover-empty { color: #bbb; font-size: 14px; }
+.sync-cover-actions { display: flex; gap: 8px; }
+.sync-btn-upload {
+  flex: 1; padding: 8px 12px; border: 1px solid #d9dce1; border-radius: 6px; background: #fff;
+  font-size: 13px; color: #444; cursor: pointer; text-align: center; transition: all 0.15s;
+}
+.sync-btn-upload:hover { border-color: var(--theme-color, #0066ff); color: var(--theme-color, #0066ff); background: #f0f7ff; }
+.sync-btn-gen {
+  flex: 1; padding: 8px 12px; border: 1px solid #d9dce1; border-radius: 6px; background: #fff;
+  font-size: 13px; color: #444; cursor: pointer; transition: all 0.15s;
+}
+.sync-btn-gen:hover { border-color: #f5a623; color: #f5a623; background: #fef9f0; }
+.sync-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.sync-btn-cancel {
+  padding: 10px 20px; border: 1px solid #d9dce1; border-radius: 8px; background: #fff;
+  font-size: 14px; color: #666; cursor: pointer; transition: all 0.15s;
+}
+.sync-btn-cancel:hover { background: #f5f5f5; }
+.sync-btn-confirm {
+  padding: 10px 20px; border: none; border-radius: 8px; background: #2ed573;
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.sync-btn-confirm:hover:not(:disabled) { background: #26b862; }
+.sync-btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
