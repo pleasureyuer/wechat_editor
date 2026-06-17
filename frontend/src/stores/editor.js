@@ -1,18 +1,92 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
+// ═══════════════════════════════════════════════════════════
+//  预设主题（不可删除，始终存在）
+// ═══════════════════════════════════════════════════════════
+const PRESET_THEMES = {
+  blue:   { id:'blue',   name:'蓝色',       color:'#0066ff', light:'#e6f0ff', isPreset:true },
+  orange: { id:'orange', name:'橙色',       color:'#ff6b35', light:'#fff0e8', isPreset:true },
+  teal:   { id:'teal',   name:'青色',       color:'#009688', light:'#e0f2f1', isPreset:true },
+  black:  { id:'black',  name:'黑色',       color:'#333333', light:'#f5f5f5', isPreset:true },
+  beanPink:      { id:'beanPink',      name:'豆沙粉',   color:'#b5838d', light:'#f8e8ea', isPreset:true },
+  milkCoffee:    { id:'milkCoffee',    name:'奶咖米棕', color:'#a67c52', light:'#f5e6d3', isPreset:true },
+  morandiGreen:  { id:'morandiGreen',  name:'莫兰迪绿', color:'#7d9a8c', light:'#e8f0ec', isPreset:true }
+};
+
+function loadCustomThemes() {
+  try {
+    const raw = localStorage.getItem('wechat_custom_themes');
+    if (!raw) return {};
+    const list = JSON.parse(raw);
+    const obj = {};
+    list.forEach(t => { obj[t.id] = t; });
+    return obj;
+  } catch { return {}; }
+}
+
+function saveCustomThemes(obj) {
+  try {
+    const list = Object.values(obj);
+    localStorage.setItem('wechat_custom_themes', JSON.stringify(list));
+  } catch {}
+}
+
 export const useEditorStore = defineStore('editor', () => {
-  // 主题相关
-  const currentTheme = ref('blue');
-  const themes = ref({
-    blue: { name: '蓝色', color: '#0066ff', light: '#e6f0ff' },
-    orange: { name: '橙色', color: '#ff6b35', light: '#fff0e8' },
-    teal: { name: '青色', color: '#009688', light: '#e0f2f1' },
-    black: { name: '黑色', color: '#333333', light: '#f5f5f5' },
-    beanPink: { name: '豆沙粉', color: '#b5838d', light: '#f8e8ea' },
-    milkCoffee: { name: '奶咖米棕', color: '#a67c52', light: '#f5e6d3' },
-    morandiGreen: { name: '莫兰迪绿', color: '#7d9a8c', light: '#e8f0ec' }
+  // ── 主题系统 ──
+  const customThemes = ref(loadCustomThemes());
+
+  // 当前选中的主题 ID
+  const currentTheme = ref(localStorage.getItem('wechat_active_theme') || 'blue');
+
+  // 融合预设 + 自定义主题（保持 themes.value[key] 的访问方式不变）
+  const themes = computed(() => ({
+    ...PRESET_THEMES,
+    ...customThemes.value
+  }));
+
+  // 规整的主题列表（用于遍历渲染）
+  const themeList = computed(() => {
+    const list = [];
+    // 先放预设
+    for (const [id, t] of Object.entries(PRESET_THEMES)) {
+      list.push({ ...t, isCustom:false, isActive:currentTheme.value === id });
+    }
+    // 再放自定义
+    for (const [id, t] of Object.entries(customThemes.value)) {
+      list.push({ ...t, isCustom:true, isActive:currentTheme.value === id });
+    }
+    return list;
   });
+
+  // 自定义主题 CRUD
+  function createCustomTheme(name, color, light) {
+    const id = 'custom_' + Date.now();
+    const t = { id, name, color, light, isPreset:false };
+    customThemes.value = { ...customThemes.value, [id]: t };
+    saveCustomThemes(customThemes.value);
+    return id;
+  }
+
+  function deleteCustomTheme(id) {
+    const copy = { ...customThemes.value };
+    delete copy[id];
+    customThemes.value = copy;
+    saveCustomThemes(copy);
+    // 如果正在使用被删主题，切回默认 blue
+    if (currentTheme.value === id) {
+      currentTheme.value = 'blue';
+      localStorage.setItem('wechat_active_theme', 'blue');
+    }
+  }
+
+  function updateCustomTheme(id, patch) {
+    const existing = customThemes.value[id];
+    if (!existing) return;
+    const updated = { ...existing, ...patch };
+    customThemes.value = { ...customThemes.value, [id]: updated };
+    saveCustomThemes(customThemes.value);
+  }
 
   // 外观配置（双层容器 + 元素样式）
   const appearance = ref({
@@ -80,8 +154,9 @@ export const useEditorStore = defineStore('editor', () => {
   const selectedComponent = ref(null);
 
   // 切换主题
-  const setTheme = (themeName) => {
-    currentTheme.value = themeName;
+  const setTheme = (themeId) => {
+    currentTheme.value = themeId;
+    try { localStorage.setItem('wechat_active_theme', themeId); } catch {}
   };
 
   // 获取当前主题颜色
@@ -432,6 +507,11 @@ ${editorContent.value}
   return {
     currentTheme,
     themes,
+    themeList,
+    customThemes,
+    createCustomTheme,
+    deleteCustomTheme,
+    updateCustomTheme,
     editorContent,
     selectedComponent,
     setTheme,
