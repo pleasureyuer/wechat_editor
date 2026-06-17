@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微信排版组件验证 - 公众号实际渲染效果</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f5f5f5;
+    padding: 20px;
+  }
+  .toolbar {
+    position: sticky; top: 0; z-index: 100;
+    background: #fff; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .toolbar h2 { font-size: 18px; color: #333; margin-right: 16px; }
+  .toolbar label { font-size: 13px; color: #666; }
+  .toolbar select {
+    padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px;
+    font-size: 14px; outline: none;
+  }
+  .toolbar button {
+    padding: 8px 16px; background: #1e6fff; color: #fff; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 14px;
+  }
+  .toolbar button:hover { background: #155bd4; }
+  .toolbar .note { font-size: 12px; color: #999; margin-left: auto; }
+
+  .wrapper {
+    max-width: 414px; margin: 0 auto;
+  }
+
+  .section-label {
+    font-size: 11px; color: #999; text-transform: uppercase;
+    letter-spacing: 1px; margin: 8px 0 4px; padding: 4px 8px;
+    background: #eee; border-radius: 4px; display: inline-block;
+  }
+
+  /* ─── 公众号外层容器（模拟手机宽度） ─── */
+  .wechat-outer { border-radius: 12px; overflow: hidden; }
+  .wechat-inner { border-radius: 12px; overflow: hidden; }
+
+  /* 手机框模拟 */
+  .phone-frame {
+    max-width: 414px; margin: 0 auto;
+    border: 3px solid #333; border-radius: 24px;
+    overflow: hidden; background: #fff;
+    box-shadow: 0 8px 40px rgba(0,0,0,.15);
+  }
+  .phone-header {
+    background: #333; color: #fff; text-align: center;
+    padding: 8px; font-size: 12px; letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h2>📱 微信排版组件验证</h2>
+  <label>主题：</label>
+  <select id="themeSelect">
+    <option value="blue" selected>🔵 蓝色 (默认)</option>
+    <option value="red">🔴 红色</option>
+    <option value="green">🟢 绿色</option>
+    <option value="purple">🟣 紫色</option>
+    <option value="orange">🟠 橙色</option>
+    <option value="pink">💗 粉色</option>
+    <option value="teal">🩵 青色</option>
+  </select>
+  <button onclick="switchTheme()">切换主题</button>
+  <span class="note">此页面模拟公众号手机端实际渲染效果</span>
+</div>
+
+<div class="phone-frame">
+  <div class="phone-header">📱 公众号文章预览</div>
+  <div class="wechat-outer" id="wechatOuter">
+    <div class="wechat-inner" id="wechatInner"></div>
+  </div>
+</div>
+
+<script>
+// ─── 主题配色 ───
+const themes = {
+  blue:    { T: '#1e6fff', TL: '#e6f0ff', TC: '#ffffff', outerBg: '#f0f1f3', contentBg: '#ffffff' },
+  red:     { T: '#e53e3e', TL: '#ffe8e8', TC: '#ffffff', outerBg: '#f0f1f3', contentBg: '#ffffff' },
+  green:   { T: '#2f855a', TL: '#e6ffed', TC: '#ffffff', outerBg: '#f0f1f3', contentBg: '#ffffff' },
+  purple:  { T: '#6b46c1', TL: '#f3e8ff', TC: '#ffffff', outerBg: '#f0f1f3', contentBg: '#ffffff' },
+  orange:  { T: '#dd6b20', TL: '#fff7ed', TC: '#ffffff', outerBg: '#f0f1f3', contentBg: '#ffffff' },
+  pink:    { T: '#d53f8c', TL: '#ffe4ec', TC: '#ffffff', outerBg: '#f0f1f3', contentBg: '#ffffff' },
+  teal:    { T: '#0d9488', TL: '#e0f7f5', TC: '#ffffff', outerBg: '#f0f1f3', contentBg: '#ffffff' },
+};
+
+const APPEARANCE = {
+  outerPadding: 12, outerRadius: 12, contentPadding: 16, contentRadius: 8,
+  fontSize: 16, lineSpacing: 1.0
+};
+
+// ─── 渲染函数 ───
+function renderAll(T, TL, TC, outerBg, contentBg) {
+  const app = APPEARANCE;
+  const fs = app.fontSize;
+  const cpad = app.contentPadding * (fs/16);
+  const hpad = Math.max(16, app.contentPadding * 1.5) * (fs/16);
+  const lh = (1.8 * app.lineSpacing).toFixed(1);
+
+  // 所有组件的微信输出 HTML（与 editor.js buildWechatHTML 完全一致）
+  const components = `
+    <!-- ===== 标题类组件 ===== -->
+    <span class="section-label">标题组件</span>
+
+    <!-- numberTitle: 编号圆标（table 布局） -->
+    <table cellspacing="0" cellpadding="0" style="margin:18px 0 10px;"><tr>
+      <td style="vertical-align:middle;width:38px;"><span style="background-color:${T};color:${TC};display:inline-block;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-size:13px;font-weight:700;">01</span></td>
+      <td style="vertical-align:middle;padding-left:10px;"><span style="font-size:17px;font-weight:700;color:#222;">编号圆标标题示例</span></td>
+    </tr></table>
+
+    <!-- pillTitle: 胶囊圆点（table 布局） -->
+    <table cellspacing="0" cellpadding="0" style="margin:18px 0 10px;"><tr>
+      <td style="vertical-align:middle;"><span style="background-color:${T};color:${TC};display:inline-block;min-width:22px;height:22px;padding:0 7px;border-radius:11px;text-align:center;line-height:22px;font-size:12px;font-weight:700;">NEW</span></td>
+      <td style="vertical-align:middle;padding-left:8px;"><span style="font-size:16px;font-weight:600;color:#222;">胶囊圆点标题示例</span></td>
+    </tr></table>
+
+    <!-- circleIconTitle: 圆形图标（table 布局） -->
+    <table cellspacing="0" cellpadding="0" style="margin:16px 0 10px;"><tr>
+      <td style="vertical-align:middle;width:36px;"><span style="background-color:${T};color:${TC};display:inline-block;width:26px;height:26px;border-radius:50%;text-align:center;line-height:26px;font-size:13px;">💡</span></td>
+      <td style="vertical-align:middle;padding-left:10px;"><span style="font-size:17px;font-weight:700;color:#333;">圆形图标标题示例</span></td>
+    </tr></table>
+
+    <!-- stepTitle: 步骤序号（table 布局） -->
+    <table cellspacing="0" cellpadding="0" style="margin:16px 0 10px;"><tr>
+      <td style="vertical-align:middle;padding-right:10px;"><span style="color:${T};font-size:18px;font-weight:800;">Step 1</span></td>
+      <td style="vertical-align:middle;"><span style="font-weight:700;font-size:16px;color:#222;">步骤序号标题示例</span></td>
+    </tr></table>
+
+    <!-- tagTitle: 左边框标题 -->
+    <section style="border-left:4px solid ${T};padding-left:12px;margin:22px 0 12px;"><span style="font-size:18px;font-weight:700;color:#333;">标签标题示例</span></section>
+
+    <!-- cardTitle: 卡片标题（background-color 已修复） -->
+    <section style="margin:16px 0 10px;"><span style="display:inline-block;background-color:${TL};border-top:1px solid ${T};border-right:1px solid ${T};border-bottom:1px solid ${T};border-left:1px solid ${T};border-radius:8px;padding:7px 16px;font-weight:700;color:${T};font-size:15px;">卡片标题</span></section>
+
+    <!-- centerLineTitle: 居中下划线标题 -->
+    <section style="text-align:center;margin:20px 0 12px;"><span style="font-size:17px;font-weight:700;border-bottom:2px solid ${T};padding-bottom:8px;color:#333;display:inline-block;">居中下划线标题</span></section>
+
+    <!-- ===== 正文/排版组件 ===== -->
+    <span class="section-label">排版组件</span>
+
+    <!-- dotLine: 圆点横线（table 布局，4列） -->
+    <table cellspacing="0" cellpadding="0" style="margin:16px 0;width:100%;"><tr>
+      <td style="vertical-align:middle;width:16px;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background-color:${T};"></span></td>
+      <td style="vertical-align:middle;"><span style="display:inline-block;width:100%;height:1px;background-color:#ddd;"></span></td>
+      <td style="vertical-align:middle;width:8px;"></td>
+      <td style="vertical-align:middle;white-space:nowrap;"><span style="font-size:15px;color:#444;">圆点分割线文字</span></td>
+    </tr></table>
+
+    <!-- highlightBlock: 高亮块（table 布局） -->
+    <table cellspacing="0" cellpadding="0" style="margin:14px 0;width:100%;background-color:${TL};border-radius:8px;"><tr>
+      <td style="vertical-align:top;width:24px;padding:12px 0 12px 16px;"><span style="font-size:16px;">◆</span></td>
+      <td style="vertical-align:top;padding:12px 16px 12px 8px;font-size:14px;color:#444;line-height:1.8;">这是重点高亮块，用于强调重要信息。微信中 table 布局可以正常渲染，菱形符号和文字会水平排列。</td>
+    </tr></table>
+
+    <!-- infoBox: 信息框（rgba→TL 已修复） -->
+    <section style="background-color:${TL};border-top:1px solid ${TL};border-right:1px solid ${TL};border-bottom:1px solid ${TL};border-left:1px solid ${TL};border-radius:8px;padding:14px 18px;margin:14px 0;font-size:14px;color:#555;">ℹ️ 这是信息提示框，边框颜色已从 rgba() 改为纯色 ${TL}，微信可正常显示。</section>
+
+    <!-- cardBox: 卡片盒子 -->
+    <section style="border-top:1px solid #e0e6ed;border-right:1px solid #e0e6ed;border-bottom:1px solid #e0e6ed;border-left:1px solid #e0e6ed;background-color:#ffffff;padding:20px;margin:16px 0;">📦 卡片盒子内容区域</section>
+
+    <!-- quoteBlock: 引用块（background-color 已修复） -->
+    <blockquote style="border-left:4px solid ${T};background-color:#f7f7f7;padding:14px 18px;color:#595959;font-size:16px;line-height:1.8;margin:16px 0;">这是引用块，用于引用他人观点或重要论述。</blockquote>
+
+    <!-- softPillTitle: 灰色标签（background-color 已修复） -->
+    <section style="margin:20px 0 12px;"><span style="background-color:#f0f0f0;color:#666;padding:2px 10px;border-radius:10px;font-size:11px;margin-right:8px;">标签</span><span style="font-size:16px;font-weight:600;">灰色标签标题</span></section>
+
+    <!-- ===== 分割线 ===== -->
+    <span class="section-label">分割线</span>
+
+    <!-- dividerSolid: 实线 -->
+    <p><span style="display:inline-block;width:100%;height:1px;background-color:${TL};vertical-align:middle;font-size:1px;line-height:1px;">&nbsp;</span></p>
+
+    <!-- dividerDashed: 虚线（渐变→border-dashed 已修复） -->
+    <p><span style="display:inline-block;width:100%;border-top:1px dashed ${T};height:1px;font-size:1px;line-height:1px;">&nbsp;</span></p>
+
+    <!-- dividerDot: 圆点 -->
+    <p style="text-align:center;margin:24px 0;color:${TL};font-size:14px;letter-spacing:10px;">● ● ●</p>
+
+    <!-- dividerThick: 粗线 -->
+    <p><span style="display:inline-block;width:100%;height:2px;background-color:${T};opacity:0.25;vertical-align:middle;font-size:1px;line-height:1px;">&nbsp;</span></p>
+
+    <!-- ===== 普通段落（对照） ===== -->
+    <span class="section-label">普通段落（对照组）</span>
+    <p style="margin:14px 0;color:#262626;">这是一段普通文字，用于对比组件之间的间距和字体效果。观察上方各组件的 table 布局是否水平排列正常。</p>
+    <p style="margin:14px 0;color:#262626;">第二段文字，验证行间距和段落间距是否符合预期。</p>
+  `;
+
+  document.getElementById('wechatOuter').style.cssText = `
+    background-color:${outerBg};padding:${app.outerPadding}px;border-radius:${app.outerRadius}px;
+  `;
+  document.getElementById('wechatInner').style.cssText = `
+    background-color:${contentBg};border-radius:${app.contentRadius}px;
+    padding:${cpad}px ${hpad}px;font-size:${fs}px;line-height:${lh};color:#262626;
+  `;
+  document.getElementById('wechatInner').innerHTML = components;
+}
+
+// ─── 初始化 ───
+function switchTheme() {
+  const t = themes[document.getElementById('themeSelect').value];
+  renderAll(t.T, t.TL, t.TC, t.outerBg, t.contentBg);
+}
+
+switchTheme();
+</script>
+
+</body>
+</html>

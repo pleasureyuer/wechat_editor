@@ -329,17 +329,43 @@ const handleClear = () => {
 };
 
 // 推送到公众号草稿箱
-const handlePushWechat = (detail) => {
+const pushLoading = ref(false);
+const handlePushWechat = async (detail) => {
   const content = editorRef.value?.getContent() || '';
   if (!content.trim()) {
     alert('编辑器内容为空，无法推送');
     return;
   }
-  if (!detail?.account?.appId) {
-    alert('请先在右上角添加并选择公众号账号');
-    return;
+
+  pushLoading.value = true;
+  try {
+    // 提取标题（取第一个 h1 或 h2）
+    const tmp = document.createElement('div');
+    tmp.innerHTML = content;
+    const h = tmp.querySelector('h1, h2, h3');
+    const title = h ? h.textContent.trim() : '未命名文章';
+
+    // 生成微信兼容 HTML
+    const wechatHtml = editorStore.buildWechatHTML(content);
+
+    const res = await fetch(`/api/wechat/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content: wechatHtml }),
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      alert(`✅ ${data.message}`);
+    } else {
+      const hint = data.hint ? `\n\n${data.hint}` : '';
+      alert(`❌ ${data.error}${hint}`);
+    }
+  } catch (e) {
+    alert('❌ 推送失败：' + e.message + '\n\n请确认后端服务已启动（http://localhost:3000/api/health）');
+  } finally {
+    pushLoading.value = false;
   }
-  alert('推送功能正在开发中，当前版本请使用「复制」按钮，手动粘贴到公众号后台。');
 };
 </script>
 
