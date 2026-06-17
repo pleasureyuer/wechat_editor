@@ -1,14 +1,43 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const express = require('express');
+const fs      = require('fs');
 const path    = require('path');
 const app     = express();
 
 app.use(express.json({ limit: '5mb' }));
 
+// ── 凭据存储路径（服务器文件，用户在前端配置后写入）───────────
+const CREDENTIALS_FILE = path.join(__dirname, '..', 'credentials.json');
+
+// .env 作为后备（首次部署或用户未在前端配置时使用）
+const ENV_APP_ID     = process.env.WECHAT_APP_ID     || '';
+const ENV_APP_SECRET = process.env.WECHAT_APP_SECRET || '';
+
+function readCredentials() {
+  try {
+    if (fs.existsSync(CREDENTIALS_FILE)) {
+      const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      if (data.appId && data.appSecret) return data;
+    }
+  } catch {}
+  return null;
+}
+
+function saveCredentials(appId, appSecret) {
+  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify({ appId, appSecret, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+}
+
+function getCredentials() {
+  const stored = readCredentials();
+  if (stored) return stored;
+  // 回退到 .env
+  if (ENV_APP_ID && ENV_APP_SECRET) return { appId: ENV_APP_ID, appSecret: ENV_APP_SECRET };
+  return null;
+}
+
 // ── 微信 API 配置 ──────────────────────────────────────────────
-const WECHAT_APP_ID     = process.env.WECHAT_APP_ID     || '';
-const WECHAT_APP_SECRET = process.env.WECHAT_APP_SECRET || '';
-const WECHAT_API        = 'https://api.weixin.qq.com/cgi-bin';
+const WECHAT_API = 'https://api.weixin.qq.com/cgi-bin';
 
 // ── access_token 缓存 ─────────────────────────────────────────
 let tokenCache = { token: '', expires: 0 };
@@ -17,9 +46,13 @@ async function getAccessToken() {
   if (tokenCache.token && Date.now() < tokenCache.expires) {
     return tokenCache.token;
   }
-  if (!WECHAT_APP_ID || !WECHAT_APP_SECRET) {
-    throw new Error('未配置 WECHAT_APP_ID 或 WECHAT_APP_SECRET，请检查 .env 文件');
+
+  const creds = getCredentials();
+  if (!creds || !creds.appId || !creds.appSecret) {
+    throw new Error('未配置公众号 AppID/AppSecret，请在顶部「添加新账号」中配置');
   }
+
+  const { appId: WECHAT_APP_ID, appSecret: WECHAT_APP_SECRET } = creds;
 
   const url = `${WECHAT_API}/token?grant_type=client_credential&appid=${WECHAT_APP_ID}&secret=${WECHAT_APP_SECRET}`;
   const res = await fetch(url);
@@ -145,9 +178,37 @@ app.post('/api/wechat/draft', async (req, res) => {
   }
 });
 
+// ── 微信凭据管理（前端配置入口）──────────────────────────────
+// GET  → 查看当前配置状态（不泄露 AppSecret）
+app.get('/api/settings/wechat', (req, res) => {
+  const creds = readCredentials();
+  res.json({
+    configured: !!(creds && creds.appId && creds.appSecret),
+    appId: creds ? creds.appId : (ENV_APP_ID || ''),
+    source: creds ? 'frontend' : (ENV_APP_ID ? 'env' : 'none'),
+  });
+});
+
+// POST → 保存/更新凭据（由前端添加账号时调用）
+app.post('/api/settings/wechat', (req, res) => {
+  const { appId, appSecret } = req.body;
+  if (!appId || !appSecret) {
+    return res.status(400).json({ success: false, error: '缺少 appId 或 appSecret' });
+  }
+  // 基本校验：AppID 以 wx 开头
+  if (!appId.startsWith('wx')) {
+    return res.status(400).json({ success: false, error: 'AppID 格式不正确（应以 wx 开头）' });
+  }
+  saveCredentials(appId, appSecret);
+  // 清除旧 token，下次请求会用新凭据重新获取
+  tokenCache = { token: '', expires: 0 };
+  res.json({ success: true, appId });
+});
+
 // ── 健康检查 ──────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', config_ready: !!(WECHAT_APP_ID && WECHAT_APP_SECRET) });
+  const creds = getCredentials();
+  res.json({ status: 'ok', config_ready: !!(creds && creds.appId && creds.appSecret) });
 });
 
 // ── 生产环境：托管前端静态文件 ────────────────────────────────
@@ -159,6 +220,7 @@ app.get('*', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
+  const creds = getCredentials();
   console.log(`✅ 微信排版服务已启动 → http://localhost:${PORT}`);
-  console.log(`   公众号配置：${WECHAT_APP_ID ? '✅ 已配置' : '⚠️ 未配置（需在 .env 中填写）'}`);
+  console.log(`   公众号配置：${(creds && creds.appId) ? '✅ 已配置（' + creds.appId + '）' : '⚠️ 未配置（请在页面顶部「添加新账号」中配置）'}`);
 });

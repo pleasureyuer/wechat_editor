@@ -76,7 +76,9 @@
           </div>
           <div class="modal-actions">
             <button class="modal-btn modal-cancel" @click="showAddAccount = false">取消</button>
-            <button class="modal-btn modal-confirm" @click="addAccount" :disabled="!newAccName || !newAccAppId || !newAccSecret">确认添加</button>
+            <button class="modal-btn modal-confirm" @click="addAccount" :disabled="!newAccName || !newAccAppId || !newAccSecret || savingAccount">
+              {{ savingAccount ? '保存中...' : '确认添加' }}
+            </button>
           </div>
         </div>
       </div>
@@ -89,12 +91,12 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 const emit = defineEmits(['copy', 'export', 'clear', 'push-wechat']);
 
-const version = '20260614-15';
+const version = '20260617-deploy';
 const showAccountMenu = ref(false);
 const showAddAccount = ref(false);
 const accountDropdownRef = ref(null);
 
-// 账号数据
+// 账号数据（localStorage 仅存昵称+AppID掩码，不存 Secret）
 const currentAccountId = ref('');
 const accounts = ref([]);
 
@@ -102,10 +104,11 @@ const accounts = ref([]);
 const newAccName = ref('');
 const newAccAppId = ref('');
 const newAccSecret = ref('');
+const savingAccount = ref(false);
 
 const currentAccount = computed(() => {
   const found = accounts.value.find(a => a.id === currentAccountId.value);
-  return found || { name: '未登录', appIdMasked: '' };
+  return found || { name: '未配置', appIdMasked: '' };
 });
 
 const hasValidAppId = computed(() => {
@@ -113,8 +116,53 @@ const hasValidAppId = computed(() => {
   return acc && !!acc.appId;
 });
 
+// 同步凭据到后端
+const syncCredentialsToBackend = async (appId, appSecret) => {
+  try {
+    const res = await fetch('/api/settings/wechat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId, appSecret }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert('⚠️ 凭据保存失败：' + (data.error || '未知错误'));
+      return false;
+    }
+    return true;
+  } catch (e) {
+    alert('⚠️ 无法连接到服务器，请确认服务已启动');
+    return false;
+  }
+};
+
+// 从后端读取当前凭据状态
+const loadCredentialsStatus = async () => {
+  try {
+    const res = await fetch('/api/settings/wechat');
+    const data = await res.json();
+    // 如果后端有配置，但本地账号列表为空，建一条默认账号
+    if (data.configured && data.appId && accounts.value.length === 0) {
+      const masked = data.appId.length > 8
+        ? data.appId.slice(0, 6) + '___' + data.appId.slice(-4)
+        : data.appId;
+      accounts.value.push({
+        id: 'acc_synced',
+        name: '已配置的公众号',
+        appId: data.appId,
+        appIdMasked: masked,
+      });
+      currentAccountId.value = 'acc_synced';
+      saveAccounts();
+    }
+  } catch {
+    // 服务器不可达时保持静默，允许纯本地使用
+  }
+};
+
 onMounted(() => {
   loadAccounts();
+  loadCredentialsStatus();
   document.addEventListener('click', handleClickOutside);
 });
 
@@ -144,7 +192,11 @@ const loadAccounts = () => {
 };
 
 const saveAccounts = () => {
-  localStorage.setItem('wechat_accounts', JSON.stringify(accounts.value));
+  // localStorage 只存昵称和 appId（掩码），不存 Secret
+  const safe = accounts.value.map(({ id, name, appId, appIdMasked }) => ({
+    id, name, appId, appIdMasked,
+  }));
+  localStorage.setItem('wechat_accounts', JSON.stringify(safe));
   localStorage.setItem('wechat_current_account', currentAccountId.value);
 };
 
@@ -152,15 +204,47 @@ const toggleAccountMenu = () => {
   showAccountMenu.value = !showAccountMenu.value;
 };
 
-const selectAccount = (id) => {
+const selectAccount = async (id) => {
+  const acc = accounts.value.find(a => a.id === id);
+  if (!acc) return;
+
+  // 切换账号：需要用户重新输入 Secret（localStorage 不保存 Secret）
+  if (acc.appId) {
+    // 尝试用当前可能缓存的 Secret 同步到后端
+    // 如果后端已有此 appId 的凭据则无需重输
+    try {
+      const res = await fetch('/api/settings/wechat');
+      const data = await res.json();
+      if (data.configured && data.appId === acc.appId) {
+        // 后端已存有此 AppID 的凭据，直接切换
+        currentAccountId.value = id;
+        saveAccounts();
+        showAccountMenu.value = false;
+        return;
+      }
+    } catch {}
+    
+    // 后端没有此凭据，需要用户输入 Secret
+    const secret = prompt(`请输入「${acc.name}」的 AppSecret：`);
+    if (!secret) return;
+    const ok = await syncCredentialsToBackend(acc.appId, secret);
+    if (!ok) return;
+  }
+
   currentAccountId.value = id;
   saveAccounts();
   showAccountMenu.value = false;
 };
 
-const addAccount = () => {
+const addAccount = async () => {
   if (!newAccName.value || !newAccAppId.value || !newAccSecret.value) return;
 
+  savingAccount.value = true;
+  // 1. 先同步凭据到后端
+  const ok = await syncCredentialsToBackend(newAccAppId.value, newAccSecret.value);
+  if (!ok) { savingAccount.value = false; return; }
+
+  // 2. 保存到本地账号列表（不存 Secret）
   const id = 'acc_' + Date.now();
   const masked = newAccAppId.value.length > 8
     ? newAccAppId.value.slice(0, 6) + '___' + newAccAppId.value.slice(-4)
@@ -170,8 +254,7 @@ const addAccount = () => {
     id,
     name: newAccName.value,
     appId: newAccAppId.value,
-    appSecret: newAccSecret.value,
-    appIdMasked: masked
+    appIdMasked: masked,
   });
 
   currentAccountId.value = id;
@@ -181,6 +264,7 @@ const addAccount = () => {
   newAccAppId.value = '';
   newAccSecret.value = '';
   showAddAccount.value = false;
+  savingAccount.value = false;
 };
 </script>
 
