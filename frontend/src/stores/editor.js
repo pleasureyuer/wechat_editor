@@ -289,9 +289,10 @@ export const useEditorStore = defineStore('editor', () => {
 
         case 'dotLine': {
           const textHtml = child.querySelector('.dot-text')?.innerHTML || child.textContent.trim() || '';
+          // 用 border-bottom 画横线（替代字符画线，避免 font-size:1px 被微信过滤）
           out.push(`<section style="display:flex;align-items:center;margin:16px 0;">` +
             `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background-color:${T};flex-shrink:0;"></span>` +
-            `<span style="color:#ddd;font-size:1px;flex:1;margin:0 6px;overflow:hidden;">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>` +
+            `<span style="flex:1;height:0;border-top:1px solid #ddd;margin:0 8px;"></span>` +
             `<span style="font-size:15px;color:#444;white-space:nowrap;flex-shrink:0;">${textHtml}</span>` +
           `</section>`);
           break;
@@ -334,8 +335,12 @@ export const useEditorStore = defineStore('editor', () => {
         }
 
         case 'highlightBlock': {
-          // 和编辑区一致：◆ + 色块背景文字
-          out.push(`<section style="background-color:${TL};border-radius:8px;padding:12px 16px;margin:14px 0;font-size:14px;color:#444;line-height:1.8;"><span style="font-size:16px;">◆</span>&nbsp;${txt}</section>`);
+          // 取纯文字（去掉开头的 ◆ span，避免双菱形）
+          const clone = child.cloneNode(true);
+          const firstSpan = clone.querySelector('span:first-child');
+          if (firstSpan) firstSpan.remove();
+          const textOnly = clone.textContent.trim() || txt;
+          out.push(`<section style="background-color:${TL};border-radius:8px;padding:12px 16px;margin:14px 0;font-size:14px;color:#444;line-height:1.8;display:flex;align-items:flex-start;"><span style="font-size:16px;flex-shrink:0;">◆</span>&nbsp;${textOnly}</section>`);
           break;
         }
 
@@ -360,12 +365,13 @@ export const useEditorStore = defineStore('editor', () => {
         }
 
         case 'dividerDashed': {
-          out.push(`<p><span style="display:inline-block;width:100%;border-top:1px dashed ${T};height:1px;font-size:1px;line-height:1px;">&nbsp;</span></p>`);
+          out.push(`<p style="border-top:1px dashed ${T};margin:20px 0;height:0;font-size:0;line-height:0;"></p>`);
           break;
         }
 
         case 'dividerDot': {
-          out.push(`<p style="text-align:center;margin:24px 0;color:${TL};font-size:14px;letter-spacing:10px;">● ● ●</p>`);
+          // 用 border-bottom 画点状线（替代浅色字符，避免不可见）
+          out.push(`<p style="margin:24px 0;"><span style="display:block;border-bottom:2px dotted #ccc;height:0;font-size:1px;line-height:0;">&nbsp;</span></p>`);
           break;
         }
 
