@@ -130,5 +130,5 @@ export const TITLE_BODY_CARDS = [
 ];
 // 只填充内容区、保留组件默认开头/结尾的卡片
 export const BODY_ONLY_CARDS = [
-  'qaBox'
+  'qaBox', 'zenQuote'
 ];
