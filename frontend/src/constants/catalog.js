@@ -122,3 +122,13 @@ export const ALL_COMPONENT_OPTIONS = [
   ...DIVIDER_COMPONENTS.map(c => ({ type: c.type, name: c.name, group: '分割线' })),
   ...TABLE_COMPONENTS.map(c => ({ type: c.type, name: c.name, group: '表格' })),
 ];
+
+// ── 段落替换型组件（点击时把光标所在段落转换为组件，而非插入新块）──
+// 「标题+正文」双段卡片：标题段 + 正文段一起被替换
+export const TITLE_BODY_CARDS = [
+  'topicSectionCard', 'waistSealRounded', 'bambooJoint', 'doubleLayerFrame', 'doubleLayerFrameRound'
+];
+// 只填充内容区、保留组件默认开头/结尾的卡片
+export const BODY_ONLY_CARDS = [
+  'qaBox'
+];
