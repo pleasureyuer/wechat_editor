@@ -4,12 +4,12 @@
     <div class="topbar-left">
       <span class="logo-icon">◆</span>
       <h1 class="title">公众号排版工具</h1>
-      <span class="version">v{{ version }}</span>
+      <span class="version-badge">v{{ version }}</span>
     </div>
 
     <!-- 中间：操作按钮组 -->
     <div class="topbar-center">
-      <button class="tb-btn" @click="$emit('clear')" title="清空编辑区">
+      <button class="tb-btn tb-btn-clear" @click="$emit('clear')" title="清空编辑区">
         🗑 清空
       </button>
       <button class="tb-btn" @click="$emit('export')" title="导出完整 HTML">
@@ -43,6 +43,15 @@
               <span class="acc-star">{{ acc.id === currentAccountId ? '★' : '☆' }}</span>
               <span class="acc-name">{{ acc.name }}</span>
               <span class="acc-id">{{ acc.appIdMasked }}</span>
+              <span class="acc-actions">
+                <button class="acc-edit-btn" @click.stop="editAccount(acc)" title="编辑昵称">✏️</button>
+                <button
+                  class="acc-del-btn"
+                  :disabled="accounts.length <= 1"
+                  :title="accounts.length <= 1 ? '至少保留一个账号' : '删除账号'"
+                  @click.stop="deleteAccount(acc)"
+                >🗑️</button>
+              </span>
             </div>
             <button class="account-add-btn" @click="showAddAccount = true; showAccountMenu = false">
               <span>＋</span> 添加新账号
@@ -91,7 +100,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 
 const emit = defineEmits(['copy', 'export', 'clear', 'push-wechat']);
 
-const version = '20260617-deploy';
+const version = '20260729-font17';
 const showAccountMenu = ref(false);
 const showAddAccount = ref(false);
 const accountDropdownRef = ref(null);
@@ -117,12 +126,12 @@ const hasValidAppId = computed(() => {
 });
 
 // 同步凭据到后端
-const syncCredentialsToBackend = async (appId, appSecret) => {
+const syncCredentialsToBackend = async (name, appId, appSecret) => {
   try {
     const res = await fetch('/api/settings/wechat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appId, appSecret }),
+      body: JSON.stringify({ name, appId, appSecret }),
     });
     const data = await res.json();
     if (!data.success) {
@@ -136,12 +145,45 @@ const syncCredentialsToBackend = async (appId, appSecret) => {
   }
 };
 
-// 从后端读取当前凭据状态
+// 从后端读取当前凭据状态（多账号）
 const loadCredentialsStatus = async () => {
   try {
     const res = await fetch('/api/settings/wechat');
     const data = await res.json();
-    // 如果后端有配置，但本地账号列表为空，建一条默认账号
+    // 新格式：{ accounts: [...], activeAppId: 'wx...' }
+    if (data.accounts && data.accounts.length > 0) {
+      const backendMap = new Map(data.accounts.map(a => [a.appId, a]));
+      
+      // 同步后端账号到本地（补全本地缺失的，更新 appIdMasked）
+      data.accounts.forEach(acc => {
+        const existing = accounts.value.find(a => a.appId === acc.appId);
+        if (!existing) {
+          accounts.value.push({
+            id: 'acc_srv_' + acc.appId.slice(-8),
+            name: acc.name,
+            appId: acc.appId,
+            appIdMasked: acc.appIdMasked,
+          });
+        } else {
+          // 更新脱敏 appId
+          existing.appIdMasked = acc.appIdMasked;
+          if (acc.name && acc.name !== '未命名账号') existing.name = acc.name;
+        }
+      });
+      
+      // 同步激活账号
+      if (data.activeAppId) {
+        const localMatch = accounts.value.find(a => a.appId === data.activeAppId);
+        if (localMatch) {
+          currentAccountId.value = localMatch.id;
+        }
+      }
+      
+      saveAccounts();
+      return;
+    }
+    
+    // 旧格式兼容：{ configured: true, appId: 'wx...' }
     if (data.configured && data.appId && accounts.value.length === 0) {
       const masked = data.appId.length > 8
         ? data.appId.slice(0, 6) + '___' + data.appId.slice(-4)
@@ -156,7 +198,7 @@ const loadCredentialsStatus = async () => {
       saveAccounts();
     }
   } catch {
-    // 服务器不可达时保持静默，允许纯本地使用
+    // 服务器不可达时保持静默
   }
 };
 
@@ -208,27 +250,25 @@ const selectAccount = async (id) => {
   const acc = accounts.value.find(a => a.id === id);
   if (!acc) return;
 
-  // 切换账号：需要用户重新输入 Secret（localStorage 不保存 Secret）
+  // 切换活跃账号：后端已存储所有账号凭据，只需告诉后端激活哪个
   if (acc.appId) {
-    // 尝试用当前可能缓存的 Secret 同步到后端
-    // 如果后端已有此 appId 的凭据则无需重输
     try {
-      const res = await fetch('/api/settings/wechat');
+      const res = await fetch('/api/settings/wechat/active', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appId: acc.appId }),
+      });
       const data = await res.json();
-      if (data.configured && data.appId === acc.appId) {
-        // 后端已存有此 AppID 的凭据，直接切换
-        currentAccountId.value = id;
-        saveAccounts();
-        showAccountMenu.value = false;
-        return;
+      if (!data.success) {
+        // 后端无此账号凭据，需要用户输入 Secret
+        const secret = prompt(`请输入「${acc.name}」的 AppSecret：`);
+        if (!secret) return;
+        const ok = await syncCredentialsToBackend(acc.name, acc.appId, secret);
+        if (!ok) return;
       }
-    } catch {}
-    
-    // 后端没有此凭据，需要用户输入 Secret
-    const secret = prompt(`请输入「${acc.name}」的 AppSecret：`);
-    if (!secret) return;
-    const ok = await syncCredentialsToBackend(acc.appId, secret);
-    if (!ok) return;
+    } catch {
+      // 网络不可达时本地也切换
+    }
   }
 
   currentAccountId.value = id;
@@ -236,12 +276,46 @@ const selectAccount = async (id) => {
   showAccountMenu.value = false;
 };
 
+const editAccount = (acc) => {
+  const newName = prompt('修改账号昵称：', acc.name);
+  if (!newName || !newName.trim() || newName.trim() === acc.name) return;
+  acc.name = newName.trim();
+  saveAccounts();
+  // 同步到后端改名
+  fetch('/api/settings/wechat/rename', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ appId: acc.appId, name: acc.name }),
+  }).catch(() => {});
+};
+
+const deleteAccount = async (acc) => {
+  if (accounts.value.length <= 1) {
+    alert('至少需要保留一个账号');
+    return;
+  }
+  if (!confirm(`确定要删除账号「${acc.name}」吗？\n\n删除后需重新输入 AppSecret 才能再次使用。`)) return;
+  
+  // 从后端删除
+  try {
+    await fetch(`/api/settings/wechat/${encodeURIComponent(acc.appId)}`, { method: 'DELETE' });
+  } catch {}
+  
+  // 从本地列表删除
+  accounts.value = accounts.value.filter(a => a.id !== acc.id);
+  // 如果删除的是当前激活账号，切到第一个
+  if (currentAccountId.value === acc.id) {
+    currentAccountId.value = accounts.value[0]?.id || '';
+  }
+  saveAccounts();
+};
+
 const addAccount = async () => {
   if (!newAccName.value || !newAccAppId.value || !newAccSecret.value) return;
 
   savingAccount.value = true;
-  // 1. 先同步凭据到后端
-  const ok = await syncCredentialsToBackend(newAccAppId.value, newAccSecret.value);
+  // 1. 先同步凭据到后端（支持多账号存储）
+  const ok = await syncCredentialsToBackend(newAccName.value, newAccAppId.value, newAccSecret.value);
   if (!ok) { savingAccount.value = false; return; }
 
   // 2. 保存到本地账号列表（不存 Secret）
@@ -301,13 +375,13 @@ const addAccount = async () => {
   color: #1a1a1a;
 }
 
-.version {
-  font-size: 11px;
-  background: #ff4757;
-  color: #fff;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-weight: 500;
+.version-badge {
+  font-size: 10px;
+  color: #999;
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 400;
 }
 
 /* ====== 中间按钮区 ====== */
@@ -335,6 +409,9 @@ const addAccount = async () => {
 }
 .tb-btn:hover { border-color: var(--theme-color, #0066ff); color: var(--theme-color, #0066ff); background: var(--theme-light, #f0f7ff); }
 .tb-btn:active { transform: scale(0.97); }
+
+.tb-btn-clear { color: #999; border-color: #e8eaed; }
+.tb-btn-clear:hover { color: #e74c3c; border-color: #e74c3c; background: #fff5f5; }
 
 .tb-btn-primary {
   background: var(--theme-color, #0066ff);
@@ -398,6 +475,7 @@ const addAccount = async () => {
   cursor: pointer;
   transition: background 0.12s;
   font-size: 13px;
+  position: relative;
 }
 .account-item:hover { background: #f8f9fa; }
 .account-item.selected { background: #f0f7ff; }
@@ -405,7 +483,33 @@ const addAccount = async () => {
 .acc-star { color: #ccc; font-size: 13px; flex-shrink: 0; }
 .account-item.selected .acc-star { color: #f5a623; }
 .acc-name { color: #333; font-weight: 500; flex-shrink: 0; }
-.acc-id { color: #aaa; font-size: 12px; margin-left: auto; }
+.acc-id { color: #aaa; font-size: 12px; margin-left: auto; margin-right: 50px; }
+
+.acc-actions {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 2px;
+  opacity: 0; transition: opacity 0.15s;
+  background: inherit; padding: 2px 0 2px 6px;
+  z-index: 1;
+}
+.account-item:hover .acc-actions { opacity: 1; }
+
+.acc-edit-btn, .acc-del-btn {
+  width: 28px; height: 28px; border: 1px solid transparent; background: #f3f4f6;
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+  line-height: 1;
+}
+.acc-edit-btn:hover { background: #e0e7ff; border-color: #c7d2fe; }
+.acc-del-btn:hover { background: #fee2e2; border-color: #fecaca; }
+.acc-del-btn:disabled { opacity: 0.3; cursor: not-allowed; background: #f3f4f6; }
+.acc-del-btn:disabled:hover { background: #f3f4f6; border-color: transparent; }
+
+/* selected 状态下按钮背景跟随 */
+.account-item.selected .acc-actions { background: inherit; }
+.account-item.selected .acc-edit-btn { background: #ddecfe; }
+.account-item.selected .acc-del-btn { background: #f3e0e0; }
 
 .account-add-btn {
   display: flex;

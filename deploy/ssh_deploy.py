@@ -192,6 +192,8 @@ NODE_ENV=production
         print("Step 9: Configuring Nginx")
         print("="*60)
         
+        # 注意：本机 nginx.conf 只 include /etc/nginx/conf.d/*.conf，
+        # sites-available/sites-enabled 不被加载，因此配置必须写到 conf.d 才生效。
         nginx_conf = """# wechat-editor: editor.ai2026.cloud
 server {
     listen 80;
@@ -204,6 +206,12 @@ server {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
 
+    # 关键：index.html 不缓存，保证每次部署版本号/构建都刷新
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+    }
+
     # API proxy
     location /api/ {
         proxy_pass http://127.0.0.1:3000;
@@ -212,8 +220,10 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 
-    # Static files (SPA)
+    # Static files (SPA)：带 hash 资源长期缓存
     location / {
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
         try_files $uri $uri/ /index.html;
     }
 
@@ -222,11 +232,7 @@ server {
     add_header X-Frame-Options DENY;
 }
 """
-        run_cmd(client, f"cat > /etc/nginx/sites-available/wechat-editor << 'NGXEOF'\n{nginx_conf}\nNGXEOF", "Writing nginx config")
-        
-        # Enable site
-        run_cmd(client, "ln -sf /etc/nginx/sites-available/wechat-editor /etc/nginx/sites-enabled/", "Enable site")
-        run_cmd(client, "rm -f /etc/nginx/sites-enabled/default", "Remove default site")
+        run_cmd(client, f"cat > /etc/nginx/conf.d/wechat-editor.conf << 'NGXEOF'\n{nginx_conf}\nNGXEOF", "Writing nginx config (conf.d)")
         run_cmd(client, "nginx -t 2>&1", "Test nginx config")
         run_cmd(client, "systemctl reload nginx 2>/dev/null || nginx -s reload", "Reload nginx")
         

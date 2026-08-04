@@ -13,24 +13,101 @@ const CREDENTIALS_FILE = path.join(__dirname, '..', 'credentials.json');
 const ENV_APP_ID     = process.env.WECHAT_APP_ID     || '';
 const ENV_APP_SECRET = process.env.WECHAT_APP_SECRET || '';
 
-function readCredentials() {
+/**
+ * 读取凭据文件 → 返回 { accounts: [...], activeAppId: 'wx...' }
+ * 兼容旧格式 { appId, appSecret } → 自动迁移
+ */
+function readCredentialsFile() {
   try {
-    if (fs.existsSync(CREDENTIALS_FILE)) {
-      const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
-      const data = JSON.parse(raw);
-      if (data.appId && data.appSecret) return data;
+    if (!fs.existsSync(CREDENTIALS_FILE)) return null;
+    const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
+    const data = JSON.parse(raw);
+    // 旧格式兼容：{ appId, appSecret } → 升级为多账号格式
+    if (data.appId && data.appSecret && !data.accounts) {
+      const migrated = {
+        accounts: [{ name: '默认账号', appId: data.appId, appSecret: data.appSecret, createdAt: data.updatedAt || new Date().toISOString() }],
+        activeAppId: data.appId,
+      };
+      fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(migrated, null, 2), 'utf-8');
+      return migrated;
     }
+    if (data.accounts && Array.isArray(data.accounts)) return data;
   } catch {}
   return null;
 }
 
-function saveCredentials(appId, appSecret) {
-  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify({ appId, appSecret, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+function writeCredentialsFile(data) {
+  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 
+/** 添加或更新一个账号（按 appId 去重） */
+function upsertAccount(name, appId, appSecret) {
+  let data = readCredentialsFile();
+  if (!data) data = { accounts: [], activeAppId: null };
+  const idx = data.accounts.findIndex(a => a.appId === appId);
+  if (idx >= 0) {
+    data.accounts[idx].name = name || data.accounts[idx].name;
+    data.accounts[idx].appSecret = appSecret;
+  } else {
+    data.accounts.push({ name, appId, appSecret, createdAt: new Date().toISOString() });
+  }
+  data.activeAppId = appId; // 新添加/更新的账号自动激活
+  writeCredentialsFile(data);
+  return data;
+}
+
+/** 删除账号 */
+function removeAccount(appId) {
+  let data = readCredentialsFile();
+  if (!data) return false;
+  data.accounts = data.accounts.filter(a => a.appId !== appId);
+  if (data.activeAppId === appId) {
+    data.activeAppId = data.accounts.length > 0 ? data.accounts[0].appId : null;
+  }
+  writeCredentialsFile(data);
+  return true;
+}
+
+/** 切换激活账号 */
+function setActiveAccount(appId) {
+  let data = readCredentialsFile();
+  if (!data) return false;
+  if (!data.accounts.some(a => a.appId === appId)) return false;
+  data.activeAppId = appId;
+  writeCredentialsFile(data);
+  // 清除旧 token
+  tokenCache = { token: '', expires: 0 };
+  return true;
+}
+
+/** 只读：获取所有账号（脱敏）及当前激活账号 */
+function getAccountsInfo() {
+  const data = readCredentialsFile();
+  if (!data) return { accounts: [], activeAppId: null };
+  return {
+    accounts: data.accounts.map(a => {
+      const len = a.appId.length;
+      return {
+        name: a.name,
+        appId: a.appId,
+        appIdMasked: len > 8 ? a.appId.slice(0, 6) + '___' + a.appId.slice(-4) : a.appId,
+        isActive: a.appId === data.activeAppId,
+      };
+    }),
+    activeAppId: data.activeAppId,
+  };
+}
+
+// 旧接口兼容
 function getCredentials() {
-  const stored = readCredentials();
-  if (stored) return stored;
+  const data = readCredentialsFile();
+  // 多账号：返回激活的账号
+  if (data && data.accounts && data.activeAppId) {
+    const active = data.accounts.find(a => a.appId === data.activeAppId);
+    if (active) return { appId: active.appId, appSecret: active.appSecret };
+  }
+  // 旧格式兼容
+  if (data && data.appId && data.appSecret) return { appId: data.appId, appSecret: data.appSecret };
   // 回退到 .env
   if (ENV_APP_ID && ENV_APP_SECRET) return { appId: ENV_APP_ID, appSecret: ENV_APP_SECRET };
   return null;
@@ -122,7 +199,7 @@ async function uploadMaterialToWechat(base64, token) {
 // ── API: 推送到公众号草稿箱 ────────────────────────────────────
 app.post('/api/wechat/draft', async (req, res) => {
   try {
-    const { title, content, author, cover_base64 } = req.body;
+    const { title, content, author, digest, content_source_url, need_open_comment, cover_base64 } = req.body;
     if (!title)   return res.status(400).json({ success: false, error: '缺少标题' });
     if (!content) return res.status(400).json({ success: false, error: '缺少内容' });
 
@@ -188,13 +265,15 @@ app.post('/api/wechat/draft', async (req, res) => {
     const article = {
       title,
       content: processedContent,
-      need_open_comment: 0,
+      need_open_comment: need_open_comment ? 1 : 0,
     };
     if (thumbMediaId) {
       article.thumb_media_id = thumbMediaId;
       article.show_cover_pic = 1;
     }
     if (author) article.author = author;
+    if (digest) article.digest = digest;
+    if (content_source_url) article.content_source_url = content_source_url;
 
     const draftRes = await fetch(`${WECHAT_API}/draft/add?access_token=${token}`, {
       method: 'POST',
@@ -242,31 +321,73 @@ app.post('/api/upload/image', async (req, res) => {
   }
 });
 
-// ── 微信凭据管理（前端配置入口）──────────────────────────────
-// GET  → 查看当前配置状态（不泄露 AppSecret）
+// ── 微信凭据管理（多账号）─────────────────────────────────
+// GET  → 查看当前所有账号配置状态（脱敏）
 app.get('/api/settings/wechat', (req, res) => {
-  const creds = readCredentials();
-  res.json({
-    configured: !!(creds && creds.appId && creds.appSecret),
-    appId: creds ? creds.appId : (ENV_APP_ID || ''),
-    source: creds ? 'frontend' : (ENV_APP_ID ? 'env' : 'none'),
-  });
+  const info = getAccountsInfo();
+  if (info.accounts.length === 0 && ENV_APP_ID) {
+    // .env 有配置但未在前端添加过账号
+    const envAcc = {
+      name: '环境变量配置',
+      appId: ENV_APP_ID,
+      appIdMasked: ENV_APP_ID.length > 8 ? ENV_APP_ID.slice(0, 6) + '___' + ENV_APP_ID.slice(-4) : ENV_APP_ID,
+      isActive: true,
+    };
+    return res.json({ accounts: [envAcc], activeAppId: ENV_APP_ID, source: 'env' });
+  }
+  res.json({ ...info, source: info.accounts.length > 0 ? 'frontend' : 'none' });
 });
 
-// POST → 保存/更新凭据（由前端添加账号时调用）
+// PUT → 切换激活账号（无需传 Secret，前端只管 appId）
+app.put('/api/settings/wechat/active', (req, res) => {
+  const { appId } = req.body;
+  if (!appId) return res.status(400).json({ success: false, error: '缺少 appId' });
+  const ok = setActiveAccount(appId);
+  if (!ok) return res.status(404).json({ success: false, error: '未找到此账号，请先添加' });
+  res.json({ success: true, activeAppId: appId });
+});
+
+// POST → 添加/更新账号
 app.post('/api/settings/wechat', (req, res) => {
-  const { appId, appSecret } = req.body;
+  const { name, appId, appSecret } = req.body;
   if (!appId || !appSecret) {
     return res.status(400).json({ success: false, error: '缺少 appId 或 appSecret' });
   }
-  // 基本校验：AppID 以 wx 开头
   if (!appId.startsWith('wx')) {
     return res.status(400).json({ success: false, error: 'AppID 格式不正确（应以 wx 开头）' });
   }
-  saveCredentials(appId, appSecret);
-  // 清除旧 token，下次请求会用新凭据重新获取
+  const accountName = name || '未命名账号';
+  const data = upsertAccount(accountName, appId, appSecret);
   tokenCache = { token: '', expires: 0 };
-  res.json({ success: true, appId });
+  res.json({
+    success: true,
+    appId,
+    name: accountName,
+    activeAppId: data.activeAppId,
+    accountCount: data.accounts.length,
+  });
+});
+
+// PATCH → 修改账号昵称
+app.patch('/api/settings/wechat/rename', (req, res) => {
+  const { appId, name } = req.body;
+  if (!appId || !name || !name.trim()) return res.status(400).json({ success: false, error: '缺少 appId 或 name' });
+  const data = readCredentialsFile();
+  if (!data) return res.status(404).json({ success: false, error: '无账号数据' });
+  const acc = data.accounts.find(a => a.appId === appId);
+  if (!acc) return res.status(404).json({ success: false, error: '未找到此账号' });
+  acc.name = name.trim();
+  writeCredentialsFile(data);
+  res.json({ success: true, name: acc.name });
+});
+
+// DELETE → 删除账号
+app.delete('/api/settings/wechat/:appId', (req, res) => {
+  const { appId } = req.params;
+  const ok = removeAccount(appId);
+  if (!ok) return res.status(404).json({ success: false, error: '未找到此账号' });
+  tokenCache = { token: '', expires: 0 };
+  res.json({ success: true, activeAppId: getAccountsInfo().activeAppId });
 });
 
 // ── 健康检查 ──────────────────────────────────────────────────
