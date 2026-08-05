@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>易命术·卷一 主题样例 · 易命一术 洒扫庭除</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#e7e4df; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; padding:24px 12px; }
+  .phone { max-width:480px; margin:0 auto; background:#FBF9F5; border-radius:14px; padding:0 20px 30px; box-shadow:0 10px 40px rgba(0,0,0,.12); overflow:hidden; }
+  /* 顶部情绪封面（实拍/AI 出图占位，生产环境替换为真实照片） */
+  .hero { margin:0 -20px 0; height:200px; background:
+      radial-gradient(120% 90% at 70% 20%, #e9c98f 0%, #d9b276 38%, #b98a4e 100%);
+      position:relative; display:flex; align-items:flex-end; }
+  .hero::after { content:""; position:absolute; inset:0;
+      background:linear-gradient(180deg, rgba(0,0,0,0) 55%, rgba(60,40,20,.28) 100%); }
+  .hero-cap { position:relative; z-index:1; color:#fff8ec; font-size:12px; letter-spacing:2px; padding:0 18px 14px; opacity:.92; }
+
+  /* 以下样式与 editor.js buildWechatHTML 输出逐一对齐 */
+  .series-label { text-align:center; margin:22px 0 8px; font-size:13px; font-weight:500; letter-spacing:3px; color:#C8A15A; }
+  .series-opening { text-align:center; margin:18px 0 6px; font-size:13px; font-weight:500; letter-spacing:3px; color:#C8A15A; }
+  .article-title { margin:18px 0 16px; }
+  .article-title span { display:inline-block; font-size:20px; font-weight:800; letter-spacing:.5px; border-bottom:1px solid #1A1A1A; padding-bottom:6px; color:#1A1A1A; line-height:1.4; }
+  p.body { margin:16px 0; line-height:1.8; color:#3F3F3F; font-size:15px; text-align:justify; letter-spacing:.5px; }
+  .shu-name { text-align:center; margin:34px 0 24px; font-size:16px; font-weight:700; color:#B0392E; line-height:1.7; letter-spacing:1px; }
+  .quote-xuan { border-left:3px solid #B0392E; background-color:#F7F4EF; padding:14px 18px; color:#595959; font-size:15px; line-height:1.8; margin:18px 0; }
+  .quote-xuan b { color:#B0392E; }
+  .vol-block { display:flex; align-items:center; margin:26px 0 12px; }
+  .vol-block i { display:inline-block; width:4px; height:16px; background-color:#C8A15A; margin-right:10px; flex-shrink:0; }
+  .vol-block span { font-size:16px; font-weight:700; color:#1A1A1A; line-height:1.4; }
+  .card-vol { background-color:#F7F1E6; border-left:3px solid #C8A15A; border-radius:8px; padding:16px 18px; margin:18px 0; font-size:15px; color:#444; line-height:1.85; }
+  .card-vol b { color:#B0392E; }
+  .divider-dots { text-align:center; margin:28px 0; color:#CFC6B8; font-size:14px; letter-spacing:6px; }
+  .yiming-disclaimer { margin:32px 0 6px; padding-top:16px; border-top:1px solid #ececec; font-size:12px; color:#999; line-height:1.8; letter-spacing:.3px; text-align:center; }
+  .golden { text-align:center; padding:24px 20px; margin:20px 0; background:#F7F4EF; border-radius:8px; }
+  .golden .qm { font-size:32px; color:#B0392E; line-height:1; margin-bottom:8px; font-family:serif; }
+  .golden .qt { font-size:16px; color:#333; line-height:1.8; }
+  .disclaimer { color:#9a948a; font-size:13px; margin:22px 0 0; line-height:1.7; }
+  .demo { margin-top:34px; border-top:1px dashed #ddd6c8; padding-top:20px; }
+  .demo h4 { font-size:13px; color:#a89e8c; font-weight:600; letter-spacing:1px; margin-bottom:14px; text-align:center; }
+  .note { font-size:12px; color:#b3a994; margin-top:18px; text-align:center; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- 顶部情绪封面 -->
+  <div class="hero"><div class="hero-cap">封面 · 实拍暖光书桌 / AI 出图 900×383</div></div>
+
+  <!-- 开头署名：三段式 易命术 · 卷一 · 安身 -->
+  <div class="series-opening">易命术 · 卷一 · 安身</div>
+
+  <!-- 术名段：朱砂居中，留白充足（全系列视觉签名） -->
+  <div class="shu-name">易命一术 · 洒扫庭除</div>
+
+  <!-- 宣纸引用卡：朱砂描边 + 暖米底 -->
+  <div class="quote-xuan"><b>洒扫庭除，把地扫干净，洗干净自己，</b>别睡在垃圾堆里。</div>
+
+  <!-- 主标题：大号黑体 + 细黑下划线（杂志式） -->
+  <div class="article-title"><span>就这？就这。</span></div>
+
+  <p class="body">说"改运"，大多数人期待的是秘方、是捷径、是一步登天。结果翻开第一页，就一句"把地扫干净"。</p>
+  <p class="body">但你想想自己每天下班回家的样子。包往沙发上一扔，外套搭在椅背上，桌上的快递盒攒了三天还没扔，厨房水槽里泡着早上喝完没洗的杯子。</p>
+
+  <p class="body">心理学里有个经典概念叫"破窗效应"（Broken Windows Theory，1969 年 Kelling 与 Wilson 提出）。一栋楼破了一扇窗，如果不修，很快就会有更多的窗被打破——小失序不修，会诱来更大的失序。</p>
+
+  <!-- 宣纸引用卡：朱砂描边 + 暖米底，古文以朱砂加粗 -->
+  <div class="quote-xuan"><b>身是菩提树，心如明镜台。</b> 说的就是别让尘垢蒙了心。东西方在这件事上难得一致——一屋不扫何以扫天下，是顺序，不是口号。</div>
+
+  <p class="body">"易命"听着像玄学，但这本书一开始教的东西，一点都不玄。</p>
+
+  <!-- 金句：朱砂加粗孤立成卡 -->
+  <div class="golden"><div class="qm">&ldquo;</div><div class="qt">住在垃圾堆里，人会不自觉地觉得自己也只配待在垃圾堆里。反过来，把地扫干净了，把床铺整齐了，你坐在那个房间里，会觉得自己还能做点什么。</div></div>
+
+  <!-- 板块小标题：黑粗 + 卷色方块 -->
+  <div class="vol-block"><i></i><span>落到自己</span></div>
+  <p class="body">我今天下午收拾了卧室。把床上的衣服叠了，把桌上攒的快递盒拆了扔了，把窗台用抹布擦了一遍。其实只用了不到半小时。但坐在收拾完的房间里，感觉确实不一样。是"至少这个角落是我说了算"的踏实。</p>
+
+  <div class="golden"><div class="qm">&ldquo;</div><div class="qt">这不是迷信，是在你最无力的时候，给自己制造一个"我能行"的暗示。</div></div>
+
+  <p class="body">全书最后一术，命书收尾那句叫"此乃尔宇，尔为独尊"——这世界是你的，你说了算。可你连自己的屋子都任它脏乱、连自己都懒得收拾，凭什么说这世界是你的。</p>
+
+  <!-- 下一篇预告：卷色浅底卡 -->
+  <div class="card-vol"><b>下一篇预告 · 卷一第 02 篇《不贪者·贪之上境》</b><br>都说贪心坏事，可为什么有的人越"不贪"，反而得到越多？</div>
+
+  <!-- 结尾系列署名 -->
+  <div class="series-label">易命术手记 · 卷一</div>
+
+  <p class="yiming-disclaimer">（这一术出自小说《改运奇书》，本文只做观点层面的借用与生活化的再解读，不涉及小说情节。）</p>
+
+  <!-- 组件样式全景（同主题，供对照） -->
+  <div class="demo">
+    <h4>🎨 主题组件一览（同主题 5 个新组件）</h4>
+    <div class="series-label">易命术手记 · 卷一（系列署名）</div>
+    <div class="article-title"><span>文章主标题（细下划线）</span></div>
+    <div class="shu-name">易命X术 · 术名（朱砂居中）</div>
+    <div class="vol-block"><i></i><span>板块小标题（黑粗 + 卷色方块）</span></div>
+    <div class="quote-xuan"><b>古文原句加粗朱砂</b>，其后白话解释用正文色，不加粗。</div>
+    <div class="card-vol"><b>本卷小结 / 下一篇预告</b>：卷色浅底卡片，标题以朱砂加粗。</div>
+    <div class="divider-dots">· · ·</div>
+    <div class="golden"><div class="qm">&ldquo;</div><div class="qt">正文金句：加粗朱砂、前后留白，孤立成卡。</div></div>
+    <p class="note">正文深灰 #3F3F3F · 强调朱砂 #B0392E · 小标题黑粗 #1A1A1A<br>系列署名/卷色 #C8A15A · 暖米底 #FBF9F5 / 引用底 #F7F4EF</p>
+  </div>
+</div>
+</body>
+</html>

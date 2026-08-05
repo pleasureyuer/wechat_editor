@@ -32,364 +32,6 @@ const DEFAULT_STYLE_MAP = {
   list: 'default', code: 'cardBox', emphasis: 'default', table: 'simpleTable',
 };
 
-// 清洗外部 HTML，去掉脚本/样式标签、事件属性、危险协议，保留内联样式
-// 用于「内容输入」粘贴/导入 HTML 后原样渲染到编辑器与微信复制产物
-// 清洗危险标签/属性（给 convertHtmlToWechatCompatible 最后一步用）
-function sanitizeDoc(doc) {
-  const forbidden = ['script','style','meta','link','head','iframe','object','embed','frame','frameset','base','noscript','svg','math','video','audio'];
-  forbidden.forEach(tag => {
-    doc.querySelectorAll(tag).forEach(el => el.remove());
-  });
-  const walk = (node) => {
-    if (!node || !node.childNodes) return;
-    Array.from(node.childNodes).forEach(child => {
-      if (child.nodeType === 1) { // ELEMENT_NODE
-        Array.from(child.attributes || []).forEach(attr => {
-          const n = (attr.name || '').toLowerCase();
-          if (n.startsWith('on')) {
-            child.removeAttribute(attr.name);
-          } else if (n === 'href' || n === 'src') {
-            const v = (attr.value || '').trim().toLowerCase();
-            if (v.startsWith('javascript:') || v.startsWith('data:text/html')) {
-              child.removeAttribute(attr.name);
-            }
-          } else if (n === 'style') {
-            const sv = (attr.value || '').toLowerCase();
-            if (sv.includes('expression') || sv.includes('javascript:') || sv.includes('@import')) {
-              child.removeAttribute(attr.name);
-            }
-          }
-        });
-        walk(child);
-      }
-    });
-  };
-  walk(doc.body);
-}
-
-export function sanitizeHtmlForWechat(html) {
-  try {
-    const doc = new DOMParser().parseFromString(html || '', 'text/html');
-    sanitizeDoc(doc);
-    return doc.body.innerHTML;
-  } catch (e) {
-    return html || '';
-  }
-}
-
-// 解析简单 CSS：只处理 element、.class、#id、tag.class、tag#id 选择器
-function parseSimpleCss(cssText) {
-  const rules = [];
-  if (!cssText) return rules;
-  const cleaned = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
-  cleaned.split('}').forEach(block => {
-    const idx = block.indexOf('{');
-    if (idx === -1) return;
-    const selectors = block.slice(0, idx).split(',').map(s => s.trim()).filter(Boolean);
-    const declarations = block.slice(idx + 1).trim();
-    if (!selectors.length || !declarations) return;
-    rules.push({ selectors, declarations });
-  });
-  return rules;
-}
-
-function simplifySelector(selector) {
-  const s = selector.trim();
-  if (s.includes('[') || s.includes(']')) return null;
-  if (s.includes(':') || s.includes('::')) return null;
-  if (s.includes('@')) return null;
-  if (/[>+~]/.test(s)) return null;
-  const parts = s.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0];
-  if (parts.length === 2) return parts.join(' ');
-  return null;
-}
-
-function parseDecls(decls) {
-  const out = [];
-  if (!decls) return out;
-  decls.split(';').forEach(part => {
-    const idx = part.indexOf(':');
-    if (idx === -1) return;
-    const k = part.slice(0, idx).trim().toLowerCase();
-    const v = part.slice(idx + 1).trim();
-    if (k) out.push({ k, v });
-  });
-  return out;
-}
-
-function declMapToString(map) {
-  return Array.from(map.entries()).map(([k, v]) => `${k}:${v}`).join(';');
-}
-
-function mergeInlineStyles(base, override) {
-  const map = new Map(parseDecls(base).map(d => [d.k, d.v]));
-  parseDecls(override).forEach(d => map.set(d.k, d.v));
-  return declMapToString(map);
-}
-
-function extractCssVars(rules) {
-  const vars = new Map();
-  rules.forEach(rule => {
-    parseDecls(rule.declarations).forEach(d => {
-      if (d.k.startsWith('--')) vars.set(d.k, d.v);
-    });
-  });
-  return vars;
-}
-
-// 把 ::before / ::after 规则转成真实子元素（时间线竖线、圆点、列表小圆点等）
-function applyPseudoElements(root, rules) {
-  // 收集所有伪元素规则
-  const pseudoRules = [];
-  rules.forEach(rule => {
-    rule.selectors.forEach(selector => {
-      const m = selector.trim().match(/^(.+?)(::before|::after)$/);
-      if (!m) return;
-      const baseSel = m[1].trim();
-      const simple = simplifySelector(baseSel);
-      // 复杂基础选择器（如 .timeline > .item）尝试原 selector 匹配
-      if (!simple && /[:\[@]/.test(baseSel)) return;
-      pseudoRules.push({ baseSel: simple || baseSel, position: m[2], declarations: rule.declarations });
-    });
-  });
-  if (!pseudoRules.length) return;
-
-  pseudoRules.forEach(({ baseSel, position, declarations }) => {
-    let targets;
-    try { targets = Array.from(root.querySelectorAll(baseSel)); } catch { return; }
-    const decls = parseDecls(declarations);
-    const contentDecl = decls.find(d => d.k === 'content');
-    const styleMap = new Map(decls.filter(d => d.k !== 'content').map(d => [d.k, d.v]));
-
-    targets.forEach(target => {
-      const span = root.ownerDocument.createElement('span');
-      // 默认 inline-block，有宽高/定位时自动撑开
-      if (!styleMap.has('display')) styleMap.set('display', 'inline-block');
-      span.setAttribute('style', declMapToString(styleMap));
-      if (contentDecl && contentDecl.v && contentDecl.v !== "''" && contentDecl.v !== '""') {
-        const text = contentDecl.v.replace(/^['"]|['"]$/g, '').replace(/\\"/g, '"');
-        span.textContent = text;
-      }
-      if (position === '::before') {
-        target.insertBefore(span, target.firstChild);
-      } else {
-        target.appendChild(span);
-      }
-    });
-  });
-}
-
-// 删除微信无法正确渲染的固定定位装饰层（背景纹理、飘落叶片等）
-function removeFixedDecorations(root) {
-  root.querySelectorAll('*').forEach(el => {
-    const style = el.getAttribute('style') || '';
-    if (!/position\s*:\s*fixed/i.test(style)) return;
-    // 保留可能是真正需要的固定元素（极少）；装饰层特征：z-index 负、pointer-events:none、空或 class 含 bg/leaf
-    const isDecorative = /z-index\s*:\s*-|pointer-events\s*:\s*none/i.test(style) ||
-                         /\bbg-|\bleaf|\bfalling/i.test(el.className || '');
-    if (isDecorative) el.remove();
-  });
-}
-
-function substituteCssVars(root, vars) {
-  if (!vars.size) return;
-  const varRegex = /var\s*\(\s*(--[\w-]+)\s*(?:,\s*([^)]*))?\)/g;
-  root.querySelectorAll('*').forEach(el => {
-    const style = el.getAttribute('style') || '';
-    if (!style.includes('var(')) return;
-    const newStyle = style.replace(varRegex, (match, varName, fallback) => {
-      if (vars.has(varName)) return vars.get(varName);
-      return fallback ? fallback.trim() : match;
-    });
-    el.setAttribute('style', newStyle);
-  });
-}
-
-function applyCssRules(root, rules) {
-  const elMap = new Map();
-  rules.forEach(rule => {
-    rule.selectors.forEach(selector => {
-      const simple = simplifySelector(selector);
-      // 简单选择器直接走；复杂选择器（后代/子元素/三级等）只要不含伪类/属性/@，也尝试原 selector 匹配
-      let useSelector = simple;
-      if (!simple) {
-        const s = selector.trim();
-        if (/[:\[@]/.test(s)) return;
-        useSelector = s;
-      }
-      try {
-        root.querySelectorAll(useSelector).forEach(el => {
-          const cur = elMap.get(el) || '';
-          elMap.set(el, cur ? cur + ';' + rule.declarations : rule.declarations);
-        });
-      } catch {}
-    });
-  });
-  elMap.forEach((decls, el) => {
-    const existing = el.getAttribute('style') || '';
-    el.setAttribute('style', mergeInlineStyles(decls, existing));
-  });
-}
-
-// 微信不支持渐变背景，提取渐变首色标作为纯色 fallback，避免白字落在白底
-function flattenGradients(root) {
-  const gradRe = /(linear|radial|conic)-gradient\s*\(/i;
-  const hexRe = /#[0-9a-f]{3,6}/i;
-  root.querySelectorAll('*').forEach(el => {
-    const style = el.getAttribute('style') || '';
-    if (!gradRe.test(style)) return;
-    const firstHex = style.match(hexRe);
-    const fallback = firstHex ? firstHex[0] : '#cccccc';
-    const kept = parseDecls(style).filter(d => {
-      const k = d.k;
-      if (k === 'background' || k === 'background-image') return !gradRe.test(d.v);
-      return true;
-    });
-    // 相同时 key 后者覆盖前者
-    const map = new Map(kept.map(d => [d.k, d.v]));
-    map.set('background-color', fallback);
-    el.setAttribute('style', declMapToString(map));
-  });
-}
-
-function convertFlexGridToTable(root) {
-  const convertContainer = (el) => {
-    const children = Array.from(el.children).filter(c => c.nodeType === 1);
-    if (!children.length) return;
-    const style = el.getAttribute('style') || '';
-    const map = new Map(parseDecls(style).map(d => [d.k, d.v]));
-    const display = map.get('display') || '';
-    if (!display.includes('flex') && !display.includes('grid')) return;
-
-    const flexWrap = (map.get('flex-wrap') || '').toLowerCase();
-    const flexDirection = (map.get('flex-direction') || 'row').toLowerCase();
-
-    // 保留视觉样式，移除布局属性
-    const cleanMap = new Map(map);
-    ['display','flex-direction','flex-wrap','justify-content','align-items','gap',
-     'grid-template-columns','grid-template-rows','grid-gap','row-gap','column-gap'].forEach(k => cleanMap.delete(k));
-    const containerStyle = declMapToString(cleanMap);
-
-    // flex-wrap 用 inline-block 降级（标签云等）
-    if (display.includes('flex') && flexWrap.includes('wrap')) {
-      el.setAttribute('style', containerStyle);
-      children.forEach(child => {
-        const childStyle = child.getAttribute('style') || '';
-        child.setAttribute('style', mergeInlineStyles(childStyle, 'display:inline-block;vertical-align:top;'));
-      });
-      return;
-    }
-
-    // flex 纵向直接保留块级
-    if (display.includes('flex') && flexDirection.includes('column')) {
-      el.setAttribute('style', containerStyle);
-      return;
-    }
-
-    // 横向 flex / grid → table
-    let cols = children.length;
-    if (display.includes('grid')) {
-      const tpl = (map.get('grid-template-columns') || '').trim();
-      cols = Math.max(1, tpl.split(/\s+/).filter(Boolean).length || 2);
-    }
-
-    const doc = el.ownerDocument;
-    const table = doc.createElement('table');
-    table.setAttribute('style', `width:100%;border-collapse:collapse;${containerStyle}`);
-
-    for (let i = 0; i < children.length; i += cols) {
-      const tr = doc.createElement('tr');
-      for (let j = 0; j < cols; j++) {
-        const child = children[i + j];
-        const td = doc.createElement('td');
-        td.setAttribute('style', `vertical-align:top;padding:4px;width:${child ? (100 / cols).toFixed(2) : 0}%;`);
-        if (child) {
-          const childMap = new Map(parseDecls(child.getAttribute('style') || '').map(d => [d.k, d.v]));
-          ['display','flex','flex-basis','flex-grow','flex-shrink'].forEach(k => childMap.delete(k));
-          child.setAttribute('style', declMapToString(childMap));
-          td.appendChild(child);
-        }
-        tr.appendChild(td);
-      }
-      table.appendChild(tr);
-    }
-
-    el.innerHTML = '';
-    el.appendChild(table);
-    el.setAttribute('style', containerStyle);
-  };
-
-  // 自下而上转换，避免 live collection 混乱
-  const containers = Array.from(root.querySelectorAll('*')).filter(el => {
-    const display = (el.getAttribute('style') || '').toLowerCase();
-    return display.includes('display:flex') || display.includes('display:grid') || display.includes('display: flex') || display.includes('display: grid');
-  });
-  // 先处理深层嵌套
-  containers.sort((a, b) => b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
-  containers.forEach(convertContainer);
-}
-
-// 将外部 HTML 转成微信兼容格式：CSS 内联、flex/grid 转 table、button 转 div、相对 URL 补全
-export function convertHtmlToWechatCompatible(html, baseUrl = '') {
-  if (!html) return '';
-  try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-
-    // 1. 提取 <style> 并删除
-    const cssRules = [];
-    doc.querySelectorAll('style').forEach(el => {
-      cssRules.push(...parseSimpleCss(el.textContent || ''));
-      el.remove();
-    });
-    doc.querySelectorAll('head').forEach(el => el.remove());
-
-    // 2. CSS 类转内联样式
-    applyCssRules(doc.body, cssRules);
-
-    // 2.1 伪元素（::before/::after）转真实子元素：时间线竖线、圆点、列表小圆点、hero蒙层等
-    applyPseudoElements(doc.body, cssRules);
-
-    // 2.2 CSS 变量替换（如 :root { --bg-color:#f7f7f7 }）
-    const cssVars = extractCssVars(cssRules);
-    substituteCssVars(doc.body, cssVars);
-
-    // 2.3 删除固定定位装饰层（飘落叶片、背景纹理），微信不支持
-    removeFixedDecorations(doc.body);
-
-    // 3. flex/grid 转 table
-    convertFlexGridToTable(doc.body);
-
-    // 3.1 渐变背景降级为纯色首色标（微信不渲染渐变，否则白字看不见）
-    flattenGradients(doc.body);
-
-    // 4. button 转 div（公众号文章不支持交互按钮）
-    doc.querySelectorAll('button').forEach(btn => {
-      const div = doc.createElement('div');
-      div.innerHTML = btn.innerHTML;
-      const s = btn.getAttribute('style') || '';
-      div.setAttribute('style', mergeInlineStyles(s, 'display:block;width:100%;'));
-      btn.replaceWith(div);
-    });
-
-    // 5. 相对 URL 补全
-    if (baseUrl) {
-      doc.querySelectorAll('img').forEach(img => {
-        const src = img.getAttribute('src') || '';
-        if (src && !/^https?:\/\//i.test(src) && !/^data:/i.test(src)) {
-          try { img.setAttribute('src', new URL(src, baseUrl).href); } catch {}
-        }
-      });
-    }
-
-    // 6. 清洗危险内容
-    sanitizeDoc(doc);
-    return doc.body.innerHTML;
-  } catch (e) {
-    return html || '';
-  }
-}
-
 // 将 hex 颜色向白色混合 amt(0~1)，得到更浅的色调（用于极浅主题底）
 export function lightenToWhite(hex, amt) {
   const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
@@ -406,98 +48,61 @@ export function lightenToWhite(hex, amt) {
 //  预设主题色（不可删除，只管颜色）
 // ═══════════════════════════════════════════════════════════
 const PRESET_THEMES = {
-  // tea-rhythm rice-paper: full 8-color theme
-  chayun: {
-    id:'chayun', name:'茶韵宣纸', isPreset:true,
-    color:'#7A6B4F', light:'#F1EBDF',
-    accent:'#C45C5C', second:'#8A9A5B',
-    textMain:'#444038', textMuted:'#887F6A',
-    bgPage:'#F7F3EA', bgCard:'#FFFFFF', border:'#E6E2D3',
-    volumeColor:'#7A6B4F', volumeLight:'#F1EBDF'
-  },
-  // fresh light-cyan healing: 情感随笔 / 情绪疗愈 / 心理向内探索
-  qingxin: {
-    id:'qingxin', name:'清新浅青', isPreset:true,
-    color:'#628888', light:'#E6F2EF',
-    accent:'#D4A373', second:'#A3C9B8',
-    textMain:'#445959', textMuted:'#749999',
-    bgPage:'#F4FAF8', bgCard:'#FFFFFF', border:'#D0E4E4',
-    volumeColor:'#D4A373', volumeLight:'#F4FAF8'
-  },
-  // cool gray rational workplace: 职场干货 / 认知提升 / 理性分析
-  lengui: {
-    id:'lengui', name:'冷灰理性', isPreset:true,
-    color:'#4A5963', light:'#EEF1F3',
-    accent:'#5D8AA8', second:'#8498A5',
-    textMain:'#3A3A3A', textMuted:'#7F8C8D',
-    bgPage:'#F8F9FA', bgCard:'#FFFFFF', border:'#D6DCE0',
-    volumeColor:'#5D8AA8', volumeLight:'#F8F9FA'
-  },
-  // ── 7 套新增配色（2026-08-02）──
-  naixing: { id:'naixing', name:'奶杏暖调', isPreset:true, color:'#8C7362', light:'#F3E9E1', accent:'#C48C68', second:'#A9907E', textMain:'#584C43', textMuted:'#947F70', bgPage:'#F9F3EE', bgCard:'#FFFFFF', border:'#E4D6CC', volumeColor:'#8C7362', volumeLight:'#F3E9E1' },
-  wuhui:  { id:'wuhui',  name:'雾灰蓝',   isPreset:true, color:'#54657A', light:'#E9EFF7', accent:'#6382AC', second:'#8293A8', textMain:'#424C59', textMuted:'#78889C', bgPage:'#F3F6FA', bgCard:'#FFFFFF', border:'#D2DCE8', volumeColor:'#54657A', volumeLight:'#E9EFF7' },
-  oufen:  { id:'oufen',  name:'藕粉柔紫', isPreset:true, color:'#6B5466', light:'#F2E7EF', accent:'#B886A8', second:'#997F94', textMain:'#574754', textMuted:'#927A8D', bgPage:'#F8F3F7', bgCard:'#FFFFFF', border:'#E8D8E3', volumeColor:'#6B5466', volumeLight:'#F2E7EF' },
-  haiyan: { id:'haiyan', name:'海盐薄荷', isPreset:true, color:'#476B6B', light:'#E6F3F3', accent:'#74B4B0', second:'#86A8A6', textMain:'#395050', textMuted:'#739190', bgPage:'#F2F9F9', bgCard:'#FFFFFF', border:'#C9E2E1', volumeColor:'#476B6B', volumeLight:'#E6F3F3' },
-  kezhi:  { id:'kezhi',  name:'克制暗红', isPreset:true, color:'#784444', light:'#F3E4E4', accent:'#A85757', second:'#996C6C', textMain:'#423333', textMuted:'#866868', bgPage:'#F9F2F2', bgCard:'#FFFFFF', border:'#DDC8C8', volumeColor:'#784444', volumeLight:'#F3E4E4' },
-  zhejin: { id:'zhejin', name:'暖赭金',   isPreset:true, color:'#B0392E', light:'#F7E9E6', accent:'#C8A15A', second:'#B0392E', textMain:'#3A3A3A', textMuted:'#7F8C8D', bgPage:'#FFFFFF', bgCard:'#FFFFFF', border:'#DDC8C6', volumeColor:'#B0392E', volumeLight:'#F7E9E6' },
-  // ── 3 套青春主题（2026-08-02）──
-  yuanqi: { id:'yuanqi', name:'元气青柠', isPreset:true, color:'#3E8F77', light:'#E6F6ED', accent:'#6CC464', second:'#78B8A3', textMain:'#364942', textMuted:'#708C81', bgPage:'#F6FCF8', bgCard:'#FFFFFF', border:'#C6E2D6', volumeColor:'#6CC464', volumeLight:'#F6FCF8' },
-  mitao:  { id:'mitao',  name:'蜜桃汽水', isPreset:true, color:'#B96473', light:'#F9E4E8', accent:'#E27889', second:'#CB8894', textMain:'#483639', textMuted:'#8A696F', bgPage:'#FDF3F5', bgCard:'#FFFFFF', border:'#E9C8CF', volumeColor:'#E27889', volumeLight:'#FDF3F5' },
-  qingkong:{ id:'qingkong',name:'晴空蓝屿', isPreset:true, color:'#3E74AA', light:'#E4EFFC', accent:'#589CD8', second:'#749FC9', textMain:'#344659', textMuted:'#70879E', bgPage:'#F3F8FE', bgCard:'#FFFFFF', border:'#C5D9EE', volumeColor:'#589CD8', volumeLight:'#F3F8FE' },
+  blue:   { id:'blue',   name:'蓝色',     color:'#0066ff', light:'#e6f0ff', volumeColor:'#0066ff', volumeLight:'#e6f0ff', isPreset:true },
+  orange: { id:'orange', name:'橙色',     color:'#ff6b35', light:'#fff0e8', volumeColor:'#ff6b35', volumeLight:'#fff0e8', isPreset:true },
+  teal:   { id:'teal',   name:'青色',     color:'#009688', light:'#e0f2f1', volumeColor:'#009688', volumeLight:'#e0f2f1', isPreset:true },
+  black:  { id:'black',  name:'黑色',     color:'#333333', light:'#f5f5f5', volumeColor:'#333333', volumeLight:'#f5f5f5', isPreset:true },
+  beanPink:      { id:'beanPink',      name:'豆沙粉',   color:'#b5838d', light:'#f8e8ea', volumeColor:'#b5838d', volumeLight:'#f8e8ea', isPreset:true },
+  milkCoffee:    { id:'milkCoffee',    name:'奶咖米棕', color:'#a67c52', light:'#f5e6d3', volumeColor:'#a67c52', volumeLight:'#f5e6d3', isPreset:true },
+  morandiGreen:  { id:'morandiGreen',  name:'莫兰迪绿', color:'#7d9a8c', light:'#e8f0ec', volumeColor:'#7d9a8c', volumeLight:'#e8f0ec', isPreset:true },
+  // ── 易命术系列 · 五卷主题色（品牌朱砂固定 #B0392E，卷色按卷切换）──
+  ymV1: { id:'ymV1', name:'易命·卷一 暖赭金', color:'#B0392E', light:'#F7E9E6', volumeColor:'#C8A15A', volumeLight:'#F7F1E6', isPreset:true },
+  ymV2: { id:'ymV2', name:'易命·卷二 青碧',   color:'#B0392E', light:'#F7E9E6', volumeColor:'#4A9B8E', volumeLight:'#EAF4F1', isPreset:true },
+  ymV3: { id:'ymV3', name:'易命·卷三 靛蓝',   color:'#B0392E', light:'#F7E9E6', volumeColor:'#3A6EA5', volumeLight:'#EAF1F7', isPreset:true },
+  ymV4: { id:'ymV4', name:'易命·卷四 绛红',   color:'#B0392E', light:'#F7E9E6', volumeColor:'#B5495B', volumeLight:'#F8EEF0', isPreset:true },
+  ymV5: { id:'ymV5', name:'易命·卷五 墨紫',   color:'#B0392E', light:'#F7E9E6', volumeColor:'#5E5A88', volumeLight:'#EFEEF4', isPreset:true },
 };
 
 // ═══════════════════════════════════════════════════════════
 //  预设样式组合（不可删除，只管组件映射）
 // ═══════════════════════════════════════════════════════════
 const STYLE_PRESETS = {
+  minimal: {
+    id:'minimal', name:'简约商务', isPreset:true,
+    map:{ h1:'leftLineTitle', h2:'underlineTitle', h3:'tagTitle', h4:'tagTitle',
+          quote:'quoteBlock', card:'cardBox', divider:'dividerSolid',
+          list:'default', code:'cardBox', emphasis:'default', table:'simpleTable' }
+  },
+  literary: {
+    id:'literary', name:'文艺清新', isPreset:true,
+    map:{ h1:'leftLineTitle', h2:'centerLineTitle', h3:'cardTitle', h4:'circleIconTitle',
+          quote:'highlightBlock', card:'cardBox', divider:'dividerDashed',
+          list:'default', code:'cardBox', emphasis:'color', table:'simpleTable' }
+  },
+  tech: {
+    id:'tech', name:'科技极客', isPreset:true,
+    map:{ h1:'numberTitle', h2:'tagTitle', h3:'tagTitle', h4:'numberTitle',
+          quote:'quoteBlock', card:'cardBox', divider:'dividerDot',
+          list:'numbered', code:'cardBox', emphasis:'highlight', table:'striTable' }
+  },
+  magazine: {
+    id:'magazine', name:'杂志排版', isPreset:true,
+    map:{ h1:'rightLineTitle', h2:'dotLine', h3:'underlineTitle', h4:'tagTitle',
+          quote:'highlightBlock', card:'cardBox', divider:'dividerThick',
+          list:'dash', code:'cardBox', emphasis:'default', table:'borderTable' }
+  },
+  playful: {
+    id:'playful', name:'活泼可爱', isPreset:true,
+    map:{ h1:'circleIconTitle', h2:'leftLineTitle', h3:'tagTitle', h4:'tagTitle',
+          quote:'highlightBlock', card:'cardBox', divider:'dividerDashed',
+          list:'default', code:'cardBox', emphasis:'highlight', table:'simpleTable' }
+  },
   // ── 易命术系列专用：新中式沉静，品牌朱砂 + 卷色装饰 ──
   yiming: {
     id:'yiming', name:'易命术·新中式沉静', isPreset:true,
     map:{ h1:'titleShuName', h2:'titleVolBlock', h3:'titleVolBlock', h4:'titleVolBlock',
           quote:'quoteBlock', card:'cardVolume', divider:'dividerDots',
           list:'default', code:'cardBox', emphasis:'color', table:'simpleTable' }
-  },
-  // ── 茶韵宣纸：完整主题包（8 色 + 内容语义→组件映射）──
-  chayun: {
-    id:'chayun', name:'茶韵宣纸', isPreset:true,
-    map:{
-      h1:'centerLineTitle',    // 一级大章节：居中标题
-      h2:'doubleLineTitle',    // 板块小标题：双竖线标题（辅助色）
-      h3:'circleIconTitle',    // 重点知识点：圆形图标标题
-      h4:'tagTitle',           // 标签标题
-      quote:'doubleLayerFrame',// 摘录感悟金句：双层框内容
-      card:'cardBox',          // 正文观点引用：底色框线卡片
-      divider:'dividerGradient',// 渐变柔线
-      list:'default', code:'cardBox', emphasis:'color', table:'simpleTable'
-    }
-  },
-  // ── 清新浅青治愈：情感随笔 / 情绪疗愈 / 心理向内探索 ──
-  qingxin: {
-    id:'qingxin', name:'清新浅青治愈', isPreset:true,
-    map:{
-      h1:'centerLineTitle',     // 开篇大标题：清雅居中
-      h2:'arrowTitle',          // 分段小标题：箭头标题
-      h3:'dotLine',             // 分段小标题：圆点横线标题
-      h4:'circleIconTitle',     // 知识点：圆形图标标题
-      quote:'leadParagraph',    // 开篇导语：引用主题色导语卡片
-      card:'cardVolume',        // 情绪感悟：圆弧卷色引用框
-      divider:'dividerGradient',// 柔线分割
-      list:'iconList', code:'cardBox', emphasis:'color', table:'simpleTable'
-    }
-  },
-  // ── 冷灰理性职场：职场干货 / 认知提升 / 理性分析 ──
-  lengui: {
-    id:'lengui', name:'冷灰理性职场', isPreset:true,
-    map:{
-      h1:'centerLineTitle',     // 章节划分：居中标题
-      h2:'diamondTitle',        // 要点清单：菱形标题
-      h3:'circleStepBadge',     // 要点清单：序号圆形标题
-      h4:'tagTitle',            // 标签标题
-      quote:'quoteBlock',       // 重要结论：灰色引用
-      card:'doubleLayerFrameRound', // 重要结论：双层圆角框
-      divider:'dividerDots',    // 圆点横线分割
-      list:'numList', code:'cardBox', emphasis:'color', table:'simpleTable'
-    }
   }
 };
 
@@ -540,9 +145,9 @@ function saveCustomStylePresets(obj) {
 export const useEditorStore = defineStore('editor', () => {
   // ── 主题色系统（只管理颜色，不管样式映射）──
   const customThemes = ref(loadCustomThemes());
-  const currentTheme = ref(localStorage.getItem('wechat_active_theme') || 'chayun');
+  const currentTheme = ref(localStorage.getItem('wechat_active_theme') || 'ymV1');
 
-  const themes = computed(() => ({ ...PRESET_THEMES, ...themeOverrides.value, ...customThemes.value }));
+  const themes = computed(() => ({ ...PRESET_THEMES, ...customThemes.value }));
 
   const themeList = computed(() => {
     const list = [];
@@ -569,8 +174,8 @@ export const useEditorStore = defineStore('editor', () => {
     customThemes.value = copy;
     saveCustomThemes(copy);
     if (currentTheme.value === id) {
-      currentTheme.value = 'chayun';
-      localStorage.setItem('wechat_active_theme', 'chayun');
+      currentTheme.value = 'ymV1';
+      localStorage.setItem('wechat_active_theme', 'ymV1');
     }
   }
 
@@ -582,72 +187,6 @@ export const useEditorStore = defineStore('editor', () => {
     saveCustomThemes(customThemes.value);
   }
 
-  // ── 主题覆盖层：用户本地微调任意主题（含预设）的配色，持久化到 localStorage ──
-  // 优先级：覆盖层 > 自定义主题 > 预设。不影响预设源码，刷新仍在。
-  const THEME_OVERRIDES_KEY = 'wechat_theme_overrides';
-  function loadThemeOverrides() {
-    try {
-      const raw = localStorage.getItem(THEME_OVERRIDES_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  }
-  const themeOverrides = ref(loadThemeOverrides()); // { [themeId]: {color,light,accent,...} }
-  function saveThemeOverridesStore() {
-    try { localStorage.setItem(THEME_OVERRIDES_KEY, JSON.stringify(themeOverrides.value)); } catch {}
-  }
-  function saveThemeOverride(id, patch) {
-    themeOverrides.value = { ...themeOverrides.value, [id]: { ...(themeOverrides.value[id] || {}), ...patch } };
-    saveThemeOverridesStore();
-  }
-  function resetThemeOverride(id) {
-    const copy = { ...themeOverrides.value };
-    delete copy[id];
-    themeOverrides.value = copy;
-    saveThemeOverridesStore();
-  }
-  function hasThemeOverride(id) {
-    return !!themeOverrides.value[id];
-  }
-
-  // ── 关键字→组件映射：按【样式预设】隔离（与组件样式映射同维度），持久化到 localStorage ──
-  // 结构：{ [stylePresetId]: [ { id, keyword, component, hideKeyword, enabled } ] }
-  const KEYWORD_MAPS_KEY = 'wechat_kw_maps_v2';
-  function loadKeywordMaps() {
-    try {
-      let raw = localStorage.getItem(KEYWORD_MAPS_KEY);
-      // 兼容旧版本：原先按 themeId 隔离，迁移到按 stylePresetId 隔离（默认归并到 chayun）
-      if (!raw) {
-        const oldRaw = localStorage.getItem('wechat_kw_maps_v1');
-        if (oldRaw) {
-          const old = JSON.parse(oldRaw);
-          const merged = [];
-          for (const k in old) merged.push(...old[k]);
-          const migrated = merged.length ? { chayun: merged } : {};
-          try { localStorage.setItem(KEYWORD_MAPS_KEY, JSON.stringify(migrated)); } catch {}
-          return migrated;
-        }
-        return {};
-      }
-      return JSON.parse(raw);
-    } catch { return {}; }
-  }
-  const keywordMaps = ref(loadKeywordMaps()); // { [stylePresetId]: KwMap[] }
-  function saveKeywordMapsStore() {
-    try { localStorage.setItem(KEYWORD_MAPS_KEY, JSON.stringify(keywordMaps.value)); } catch {}
-  }
-  function getKeywordMaps(presetId) {
-    return keywordMaps.value[presetId] || [];
-  }
-  function saveKeywordMaps(presetId, list) {
-    keywordMaps.value = { ...keywordMaps.value, [presetId]: list };
-    saveKeywordMapsStore();
-  }
-  function deleteKeywordMap(presetId, mapId) {
-    const list = (keywordMaps.value[presetId] || []).filter(m => m.id !== mapId);
-    keywordMaps.value = { ...keywordMaps.value, [presetId]: list };
-    saveKeywordMapsStore();
-  }
-
   // 切换主题色（只影响颜色）
   const setTheme = (themeId) => {
     currentTheme.value = themeId;
@@ -656,25 +195,17 @@ export const useEditorStore = defineStore('editor', () => {
 
   // ── 样式预设系统（只管理组件映射，不管颜色）──
   const customStylePresets = ref(loadCustomStylePresets());
-  const currentStylePreset = ref(localStorage.getItem('wechat_active_style_preset') || 'chayun');
-
-  // 易命术预设默认暖赭金：兼容旧 ymV 系列已删除，若当前主题已失效则回退 zhejin
-  if (currentStylePreset.value === 'yiming' && !themes.value[currentTheme.value]) {
-    currentTheme.value = 'zhejin';
-    try { localStorage.setItem('wechat_active_theme', 'zhejin'); } catch {}
-  }
+  const currentStylePreset = ref(localStorage.getItem('wechat_active_style_preset') || 'yiming');
 
   const allStylePresets = computed(() => ({
     ...STYLE_PRESETS,
-    ...stylePresetOverrides.value,
     ...customStylePresets.value
   }));
 
   const stylePresetList = computed(() => {
     const list = [];
     for (const [id, s] of Object.entries(STYLE_PRESETS)) {
-      const ov = stylePresetOverrides.value[id];
-      list.push({ ...s, ...(ov || {}), isCustom:false, isActive:currentStylePreset.value === id, hasOverride:!!ov });
+      list.push({ ...s, isCustom:false, isActive:currentStylePreset.value === id });
     }
     for (const [id, s] of Object.entries(customStylePresets.value)) {
       list.push({ ...s, isCustom:true, isActive:currentStylePreset.value === id });
@@ -710,45 +241,11 @@ export const useEditorStore = defineStore('editor', () => {
     saveCustomStylePresets(customStylePresets.value);
   }
 
-  // ── 样式预设覆盖层：用户可本地修改预设样式，不污染源码 ──
-  // 结构：{ [spId]: { name, map: {h1,h2,...} } }
-  const SP_OVERRIDES_KEY = 'wechat_sp_overrides_v1';
-  function loadSPOverrides() {
-    try {
-      const raw = localStorage.getItem(SP_OVERRIDES_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  }
-  const stylePresetOverrides = ref(loadSPOverrides());
-  function saveSPOverridesStore() {
-    try { localStorage.setItem(SP_OVERRIDES_KEY, JSON.stringify(stylePresetOverrides.value)); } catch {}
-  }
-  function saveStylePresetOverride(id, patch) {
-    stylePresetOverrides.value = { ...stylePresetOverrides.value, [id]: { ...(stylePresetOverrides.value[id] || {}), ...patch } };
-    saveSPOverridesStore();
-  }
-  function resetStylePresetOverride(id) {
-    const copy = { ...stylePresetOverrides.value };
-    delete copy[id];
-    stylePresetOverrides.value = copy;
-    saveSPOverridesStore();
-    // 如果当前正在用这个预设，重新同步
-    if (currentStylePreset.value === id) syncAppearanceFromStylePreset(id);
-  }
-  function hasStylePresetOverride(id) {
-    return !!stylePresetOverrides.value[id];
-  }
-
   // 切换样式预设（只影响组件映射，不影响颜色）
   const setStylePreset = (presetId) => {
     currentStylePreset.value = presetId;
     try { localStorage.setItem('wechat_active_style_preset', presetId); } catch {}
     syncAppearanceFromStylePreset(presetId);
-    // 易命术预设默认搭配暖赭金（zhejin，即原易命卷一朱砂主色 #B0392E）
-    if (presetId === 'yiming') {
-      currentTheme.value = 'zhejin';
-      try { localStorage.setItem('wechat_active_theme', 'zhejin'); } catch {}
-    }
   };
 
   // 从样式预设同步到 appearance
@@ -790,35 +287,6 @@ export const useEditorStore = defineStore('editor', () => {
     tableStyle: 'simpleTable',
   });
 
-  // 初始化：刷新页面后，根据已保存的样式预设覆盖层恢复当前排版映射
-  // （修复「改了 H2 等组件映射点保存，刷新后改回默认」——之前初始化漏了这一步，必须重切一次预设才生效）
-  syncAppearanceFromStylePreset(currentStylePreset.value);
-
-  // 全文背景容器模式（全局设置，颜色随当前主题：背景=页底色 / 边框=边框色 / 文字=正文色）
-  const PAGE_BG_OPTIONS = [
-    { id: 'bg',       name: '背景' },
-    { id: 'bgBorder', name: '背景+边框' },
-    { id: 'border',   name: '边框' },
-    { id: 'none',     name: '不用背景' },
-  ];
-  const PAGE_BG_KEY = 'wechat_page_bg_mode';
-  const pageBgMode = ref(localStorage.getItem(PAGE_BG_KEY) || 'bg');
-  const setPageBgMode = (m) => {
-    pageBgMode.value = m;
-    try { localStorage.setItem(PAGE_BG_KEY, m); } catch {}
-  };
-  // 全文背景容器样式（仅 背景/边框 部分，颜色随当前主题：背景=页底色 / 边框=边框色）
-  // padding / 圆角 / 字体 由产出处（buildWechatHTML、编辑区）另行叠加
-  const pageBgInline = computed(() => {
-    const BP = currentThemeBgPage.value;
-    const BD = currentThemeBorder.value;
-    const mode = pageBgMode.value;
-    if (mode === 'bgBorder') return `background-color:${BP};border:1px solid ${BD};`;
-    if (mode === 'border')   return `border:1px solid ${BD};`;
-    if (mode === 'none')     return '';          // 不用背景：无容器样式
-    return `background-color:${BP};`;            // 默认 'bg'：仅背景色
-  });
-
   // 标题样式预设（用于 H1/H2/H3 选择）
   const titleStylePresets = TITLE_STYLE_OPTIONS;
 
@@ -858,15 +326,6 @@ export const useEditorStore = defineStore('editor', () => {
     return t?.volumeLight || t?.light || '#F7F1E6';
   });
 
-  // 完整主题色角色（茶韵宣纸等 8 色主题使用；未定义时回退到主色/中性色，保证旧主题不变）
-  const currentThemeAccent = computed(() => themes.value[currentTheme.value]?.accent || currentThemeColor.value);
-  const currentThemeSecond = computed(() => themes.value[currentTheme.value]?.second || currentThemeColor.value);
-  const currentThemeTextMain = computed(() => themes.value[currentTheme.value]?.textMain || '#444038');
-  const currentThemeTextMuted = computed(() => themes.value[currentTheme.value]?.textMuted || '#887F6A');
-  const currentThemeBgPage = computed(() => themes.value[currentTheme.value]?.bgPage || '#FFFFFF');
-  const currentThemeBgCard = computed(() => themes.value[currentTheme.value]?.bgCard || '#FFFFFF');
-  const currentThemeBorder = computed(() => themes.value[currentTheme.value]?.border || '#E6E2D3');
-
   // 构建公众号兼容的 HTML 输出（供预览和复制共用）
   // 使用 table 布局（微信兼容），边框用单边属性，所有样式内联
   const buildWechatHTML = (editorHTML) => {
@@ -878,13 +337,6 @@ export const useEditorStore = defineStore('editor', () => {
     const VC = currentVolumeColor.value;
     const VL = currentVolumeLight.value;
     const TC = '#fff';
-    const A = currentThemeAccent.value;    // 强调色：金句/印章/重点标注
-    const S = currentThemeSecond.value;    // 辅助色：小标题/点缀
-    const TM = currentThemeTextMain.value; // 正文主色
-    const TMT = currentThemeTextMuted.value; // 次要文字
-    const BP = currentThemeBgPage.value;   // 页面背景
-    const BC = currentThemeBgCard.value;   // 卡片底色
-    const BD = currentThemeBorder.value;   // 边框/分割线
     const app = appearance.value;
     const fs = app.fontSize; // 正文字号
     const lh = (1.8 * app.lineSpacing).toFixed(1); // 行高
@@ -941,44 +393,10 @@ export const useEditorStore = defineStore('editor', () => {
     
     normalizeNodes(temp);
 
-    // 剔除「文章标题：」「文章简介：」全局标记行 —— 仅作推送元数据，不出现在正文
-    // 仅作用于文章最开头部分（前 3 个有效块），正文中间同名前缀不受影响
-    {
-      const headEls = Array.from(temp.children)
-        .filter(el => { const t = el.textContent.trim(); return t && t.length <= 200; })
-        .slice(0, 3);
-      for (const el of headEls) {
-        const t = el.textContent.trim();
-        if (/^文章标题[：:]/.test(t) || /^文章简介[：:]/.test(t)) {
-          el.remove();
-        }
-      }
-    }
-
-    // 合并基础样式与元素原始内联样式（导入 HTML 的 class 已被 convertHtmlToWechatCompatible 转内联）
-    // 原始样式优先级更高；过滤掉微信不支持的属性，避免污染最终输出
-    function mergeElementStyle(baseStyle, el) {
-      const original = el.getAttribute('style') || '';
-      if (!original) return baseStyle;
-      const map = new Map(parseDecls(baseStyle).map(d => [d.k, d.v]));
-      parseDecls(original).forEach(d => {
-        if (d.k === 'position' && /fixed|absolute|sticky/.test(d.v)) return;
-        if (d.k === 'display' && /flex|grid|inline-flex|inline-grid/.test(d.v)) return;
-        if (d.k === 'box-shadow' || d.k === 'text-shadow') return;
-        if (d.k === 'animation' || d.k.startsWith('animation-')) return;
-        if (d.k === 'transform' || d.k === 'backdrop-filter' || d.k === 'filter') return;
-        if (d.k === 'float' || d.k === 'clear') return;
-        if (d.k === 'max-width' || d.k === 'min-width' || d.k === 'max-height' || d.k === 'min-height') return;
-        map.set(d.k, d.v);
-      });
-      return declMapToString(map);
-    }
-
     for (const child of temp.children) {
       // 普通段落
       if (child.tagName === 'P' && !child.classList.contains('editable-block')) {
-        const pStyle = mergeElementStyle(`margin:${app.paraMargin}px 0;line-height:${lh};color:${app.bodyColor};font-size:${fs}px;text-align:justify;letter-spacing:${app.letterSpacing}px;`, child);
-        out.push(`<p style="${pStyle}">${child.innerHTML}</p>`);
+        out.push(`<p style="margin:${app.paraMargin}px 0;line-height:${lh};color:${app.bodyColor};font-size:${fs}px;text-align:justify;letter-spacing:${app.letterSpacing}px;">${child.innerHTML}</p>`);
         continue;
       }
 
@@ -988,16 +406,15 @@ export const useEditorStore = defineStore('editor', () => {
         continue;
       }
 
-      // 标题标签 H1/H2/H3 等：保留内容并加样式，同时合并原始内联样式
+      // 标题标签 H1/H2/H3 等：保留内容并加样式
       if (/^H[1-6]$/.test(child.tagName)) {
         const tag = child.tagName.toLowerCase();
         const sizeMap = { h1: '22px', h2: '20px', h3: '18px', h4: '16px', h5: '15px', h6: '14px' };
-        const hStyle = mergeElementStyle(`margin:${tag === 'h1' ? '28px' : '24px'} 0 12px;font-size:${sizeMap[tag] || '16px'};font-weight:700;color:#222;line-height:${lh};`, child);
-        out.push(`<${tag} style="${hStyle}">${child.innerHTML}</${tag}>`);
+        out.push(`<${tag} style="margin:${tag === 'h1' ? '28px' : '24px'} 0 12px;font-size:${sizeMap[tag] || '16px'};font-weight:700;color:#222;line-height:${lh};">${child.innerHTML}</${tag}>`);
         continue;
       }
 
-      // 列表：保留原始 outerHTML（已含转换后的内联样式）
+      // 列表
       if (child.tagName === 'UL' || child.tagName === 'OL') {
         out.push(child.outerHTML);
         continue;
@@ -1005,16 +422,14 @@ export const useEditorStore = defineStore('editor', () => {
 
       // 引用块
       if (child.tagName === 'BLOCKQUOTE') {
-        const bqStyle = mergeElementStyle(`border-left:4px solid ${T};background-color:#f7f7f7;padding:14px 18px;color:#595959;font-size:${fs}px;line-height:${lh};margin:16px 0;`, child);
-        out.push(`<blockquote style="${bqStyle}">${child.innerHTML}</blockquote>`);
+        out.push(`<blockquote style="border-left:4px solid ${T};background-color:#f7f7f7;padding:14px 18px;color:#595959;font-size:${fs}px;line-height:${lh};margin:16px 0;">${child.innerHTML}</blockquote>`);
         continue;
       }
 
       // 只处理 editable-block
       if (!child.classList.contains('editable-block')) {
-        // 其他未知标签（导入 HTML 的 section/div/article 等）：保留原始内联样式，避免背景/圆角/边框丢失
-        const secStyle = mergeElementStyle(`margin:${app.paraMargin}px 0;font-size:${fs}px;line-height:${lh};color:${app.bodyColor};letter-spacing:${app.letterSpacing}px;`, child);
-        out.push(`<section style="${secStyle}">${child.innerHTML}</section>`);
+        // 其他未知标签：原样输出，加基础样式
+        out.push(`<section style="margin:${app.paraMargin}px 0;font-size:${fs}px;line-height:${lh};color:${app.bodyColor};letter-spacing:${app.letterSpacing}px;">${child.innerHTML}</section>`);
         continue;
       }
 
@@ -1100,6 +515,12 @@ export const useEditorStore = defineStore('editor', () => {
           break;
         }
 
+        case 'cardTitle': {
+          const ctxt = child.innerHTML;
+          out.push(`<section style="margin:16px 0 10px;"><span style="display:inline-block;background-color:${TL};border-top:1px solid ${T};border-right:1px solid ${T};border-bottom:1px solid ${T};border-left:1px solid ${T};border-radius:8px;padding:7px 16px;font-weight:700;color:${T};font-size:15px;">${ctxt}</span></section>`);
+          break;
+        }
+
         case 'arrowTitle': {
           const arrowIcon = child.querySelector('.arrow-icon')?.textContent.trim() || '→';
           const arrowText = child.querySelector('.arrow-text')?.innerHTML || child.textContent.trim();
@@ -1110,7 +531,7 @@ export const useEditorStore = defineStore('editor', () => {
         case 'doubleLineTitle': {
           const dlt = child.querySelector('h2');
           const dltxt = dlt ? dlt.textContent.trim() : child.textContent.trim();
-          out.push(`<section style="text-align:center;margin:20px 0 12px;"><span style="display:inline-block;border-left:4px solid ${S};border-right:4px solid ${S};padding:4px 12px;font-size:17px;font-weight:700;color:#333;">${dltxt}</span></section>`);
+          out.push(`<section style="text-align:center;margin:20px 0 12px;"><span style="display:inline-block;border-left:4px solid ${T};border-right:4px solid ${T};padding:4px 12px;font-size:17px;font-weight:700;color:#333;">${dltxt}</span></section>`);
           break;
         }
 
@@ -1124,7 +545,7 @@ export const useEditorStore = defineStore('editor', () => {
         case 'goldenQuote': {
           const gqDivs = child.querySelectorAll('div');
           const gqText = gqDivs.length > 1 ? (gqDivs[1].innerHTML || gqDivs[1].textContent.trim()) : '';
-          out.push(`<section style="text-align:center;padding:24px 20px;margin:20px 0;background-color:${TL};border-radius:8px;"><span style="font-size:32px;color:${A};line-height:1;">&ldquo;</span><span style="font-size:16px;color:${A};line-height:1.8;">${gqText}</span></section>`);
+          out.push(`<section style="text-align:center;padding:24px 20px;margin:20px 0;background-color:${TL};border-radius:8px;"><span style="font-size:32px;color:${T};line-height:1;">&ldquo;</span><span style="font-size:16px;color:#333;line-height:1.8;">${gqText}</span></section>`);
           break;
         }
 
@@ -1485,15 +906,20 @@ export const useEditorStore = defineStore('editor', () => {
         }
 
         case 'topicSectionCard': {
-          // 主题章节卡片（简化）：左对齐章节标题(无编号) + 横线 + 白底文本框
-          // 标题：优先读 .tsc-title，兼容旧内容（旧数据可能含 "01." 编号前缀，正则剔除）
+          // 主题章节卡片（简化）：左对齐章节标题(编号+标题) + 横线 + 白底文本框
+          const tsn = parseInt(child.getAttribute('data-num') || '1', 10);
+          const numStr = String(tsn).padStart(2, '0');
+          // 标题：优先读 .tsc-title，兼容旧内容
           const titleEl = child.querySelector('.tsc-title');
           const titleText = titleEl ? titleEl.textContent.trim()
-            : (() => { const h = child.querySelector('[style*="border-bottom"]'); return h ? (h.textContent?.trim() || '').replace(/^\d{1,2}\.\s*/, '') : ''; })();
+            : (() => { const h = child.querySelector('[style*="border-bottom"]'); return h ? (h.lastElementChild?.textContent?.trim() || '') : ''; })();
           const bodyP = child.querySelector('p');
           const bodyHtml = bodyP ? bodyP.innerHTML : '';
           out.push(`<section style="background-color:${VL};border-radius:12px;padding:20px;margin:20px 0">` +
-            `<section style="font-size:20px;font-weight:800;color:#333;line-height:1;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid ${T}">${titleText || '章节标题'}</section>` +
+            `<section style="display:flex;align-items:flex-end;gap:10px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid ${T}">` +
+              `<span style="font-size:30px;font-weight:900;color:${T};line-height:1;letter-spacing:1px">${numStr}.</span>` +
+              `<span style="font-size:20px;font-weight:800;color:#333;line-height:1">${titleText || '章节标题'}</span>` +
+            `</section>` +
             `<section style="background-color:#ffffff;border-radius:10px;padding:18px 20px;">` +
               `<p style="margin:0;font-size:${fs}px;color:#444;line-height:1.9;text-align:justify">${bodyHtml}</p>` +
             `</section>` +
@@ -1557,7 +983,7 @@ export const useEditorStore = defineStore('editor', () => {
           const dq = child.querySelector('.dq-text');
           const dqHtml = dq ? dq.innerHTML : '';
           out.push(`<section style="padding:20px 0;text-align:center;margin:20px 0">` +
-            `<div><span style="display:inline-block;width:60px;height:1px;background:${A};vertical-align:middle"></span><span style="margin:0 16px;font-size:16px;color:${A};letter-spacing:3px">${dqTitle || '核心观点'}</span><span style="display:inline-block;width:60px;height:1px;background:${A};vertical-align:middle"></span></div>` +
+            `<div><span style="display:inline-block;width:60px;height:1px;background:${T};vertical-align:middle"></span><span style="margin:0 16px;font-size:16px;color:${T};letter-spacing:3px">${dqTitle || '核心观点'}</span><span style="display:inline-block;width:60px;height:1px;background:${T};vertical-align:middle"></span></div>` +
             `<div style="margin-top:18px;font-size:15px;color:#333;line-height:1.8;padding:0 20px">${dqHtml || '真正的高级感，从来不是堆砌元素，而是克制的留白与舒适的配色。'}</div>` +
           `</section>`);
           break;
@@ -1639,32 +1065,19 @@ export const useEditorStore = defineStore('editor', () => {
         }
 
         case 'nextPreview': {
-          // 下期预告：书卷式预告（三部分：np-head 标题 / np-body 内容 / np-follow 引导关注）
-          const npHeadEl = child.querySelector('.np-head');
-          const npBodyEl = child.querySelector('.np-body');
-          const npFollowEl = child.querySelector('.np-follow');
-          const npHeadHtml = npHeadEl ? npHeadEl.innerHTML : '易命四十二术·逐成者务修者';
-          const npBodyHtml = npBodyEl ? npBodyEl.innerHTML : '下期内容预告文案，从饮食到作息全攻略，不想错过记得星标。';
-          const npFollowHtml = npFollowEl ? npFollowEl.innerHTML : '';
-          out.push(`<section style="margin-top:30px;padding:20px;background-color:${TF};border-radius:12px;border:none;overflow:hidden">` +
+          // 下期预告：书卷式预告；外层主题浅底+圆角，左侧竖排标题(writing-mode)+右侧内容；跟随主题色；微信用 table 替代 flex
+          const npHeadHtml = child.querySelector('.np-head')?.innerHTML || '中伏养生 · 健脾祛湿篇';
+          const npBodyHtml = child.querySelector('.np-body')?.innerHTML || '下周详解中伏最实用的祛湿方法，从饮食到作息全攻略，不想错过记得星标。';
+          const npFooterHtml = child.querySelector('.np-footer')?.innerHTML || '你最想了解哪方面？提前留言告诉我～';
+          out.push(`<section style="margin-top:30px;padding:20px;background-color:${TF};border-radius:12px">` +
             `<table style="width:100%;border-collapse:collapse"><tr>` +
-              `<td style="width:1%;white-space:nowrap;vertical-align:top;padding:8px 5px 8px 3px;border-right:1px solid ${TL};writing-mode:vertical-rl;text-orientation:upright;font-size:14px;color:${T};letter-spacing:3px">下期预告</td>` +
-              `<td style="vertical-align:top;padding:4px 4px 4px 12px">` +
+              `<td style="width:1%;white-space:nowrap;vertical-align:top;padding:8px 12px 8px 6px;border-right:1px solid ${TL};writing-mode:vertical-rl;text-orientation:upright;font-size:15px;color:${T};letter-spacing:4px">下期预告</td>` +
+              `<td style="vertical-align:top;padding:4px 6px 4px 16px">` +
                 `<div class="np-head" style="font-size:16px;color:${T};font-weight:500;margin-bottom:10px;letter-spacing:1px">${npHeadHtml}</div>` +
-                (npBodyHtml ? `<div class="np-body" style="font-size:14.5px;color:#554a3d;line-height:1.8;margin-bottom:12px">${npBodyHtml}</div>` : '') +
-                (npFollowHtml ? `<div class="np-follow" style="font-size:13px;color:${T};letter-spacing:1px;margin-top:14px;padding-top:12px;border-top:1px solid ${TL}">${npFollowHtml}</div>` : '') +
+                `<div class="np-body" style="font-size:14.5px;color:#554a3d;line-height:1.8;margin-bottom:12px">${npBodyHtml}</div>` +
+                `<div class="np-footer" style="font-size:13px;color:${T}">${npFooterHtml}</div>` +
               `</td>` +
             `</tr></table>` +
-          `</section>`);
-          break;
-        }
-
-        case 'noteNoBg': {
-          // 注释无背景：顶部细分割线 + 小字次要色 + 无背景；跟随主题边框/次要文字
-          const noteHtml = child.querySelector('.note-text')?.innerHTML || '（本文只做观点层面的借用与生活化的再解读，不涉及原作情节。）';
-          out.push(`<section style="margin-top:24px;border:none">` +
-            `<div style="height:1px;background:${BD};margin-bottom:12px"></div>` +
-            `<div class="note-text" style="font-size:12.5px;color:${TMT};line-height:1.7;letter-spacing:.3px">${noteHtml}</div>` +
           `</section>`);
           break;
         }
@@ -1672,8 +1085,7 @@ export const useEditorStore = defineStore('editor', () => {
         case 'zenQuote': {
           // 留白金句：禅意留白款；居中，主句+细分隔线+落款；跟随主题色
           const zqMainHtml = child.querySelector('.zq-main')?.innerHTML || '愿你安然度夏<br>心静自然凉';
-          const zqFooterEl = child.querySelector('.zq-footer');
-          const zqFooterHtml = zqFooterEl ? zqFooterEl.innerHTML : getCompText('zenQuote.footer', '晚安，我们明天见');
+          const zqFooterHtml = child.querySelector('.zq-footer')?.innerHTML || '晚安，我们明天见';
           out.push(`<section style="margin-top:40px;text-align:center;padding:10px 20px">` +
             `<div class="zq-main" style="font-size:15px;color:${T};letter-spacing:2px;line-height:2;margin-bottom:20px">${zqMainHtml}</div>` +
             `<div style="width:30px;height:1px;background:${T};margin:0 auto 16px"></div>` +
@@ -1687,12 +1099,7 @@ export const useEditorStore = defineStore('editor', () => {
       }
     }
 
-    // 最外层容器：模拟页面背景（微信不支持 CSS 变量，必须用具体色值；样式随 pageBgMode）
-    const ls = (appearance.value.letterSpacing || 0).toFixed(1);
-    const baseStyle = `padding:28px 18px;border-radius:10px;box-sizing:border-box;` +
-      `font-size:${fs}px;line-height:${lh};color:${TM};letter-spacing:${ls}px;`;
-    const wrapperStyle = (pageBgInline.value ? pageBgInline.value : '') + baseStyle;
-    return `<div style="${wrapperStyle}">${out.join('')}</div>`;
+    return out.join('');
   };
 
   // 自动计算步骤/编号标题下一个编号
@@ -1718,31 +1125,12 @@ export const useEditorStore = defineStore('editor', () => {
 
   // 组件 HTML 模板生成器（编辑区使用，带 data-style 属性）
   // text 参数：替换默认文字（不传则用默认示例文字）
-  // 组件默认文案（可在右侧面板「组件默认文案」配置），localStorage 持久化
-  const COMP_TEXT_KEY = 'wechat_comp_text'
-  function getCompText(key, fallback) {
-    try {
-      const map = JSON.parse(localStorage.getItem(COMP_TEXT_KEY) || '{}')
-      const v = map[key]
-      return (v === undefined || v === null) ? fallback : String(v)
-    } catch (e) {
-      return fallback
-    }
-  }
-
   const componentHTML = (comp, text, stepNum) => {
     const T = 'var(--theme-color, #0066ff)';
     const TL = 'var(--theme-light, #e6f0ff)';
     const TF = 'var(--theme-faint, #f8fbff)';
     const VC = 'var(--volume-color, #C8A15A)';
     const VL = 'var(--volume-light, #F7F1E6)';
-    const A = 'var(--theme-accent, var(--theme-color, #C45C5C))';   // 强调色：金句/印章/重点
-    const S = 'var(--theme-second, var(--theme-color, #8A9A5B))';   // 辅助色：小标题/点缀
-    const TM = 'var(--theme-text-main, #444038)';                   // 正文主色
-    const TMT = 'var(--theme-text-muted, #887F6A)';                 // 次要文字
-    const BP = 'var(--theme-bg-page, #FFFFFF)';                     // 页面背景
-    const BC = 'var(--theme-bg-card, #FFFFFF)';                     // 卡片底色
-    const BD = 'var(--theme-border, #E6E2D3)';                       // 边框/分割线
     const txt = text || '';
     // 换行符 → <br>（组件内换行支持）
     const br = (s) => s.replace(/\n/g, '<br>');
@@ -1795,6 +1183,11 @@ export const useEditorStore = defineStore('editor', () => {
         return `<div class="editable-block style-underline-title" data-style="underlineTitle" style="margin:18px 0 10px"><span style="font-size:17px;font-weight:700;border-bottom:2px solid ${T};padding-bottom:3px;">${ut}</span></div>`;
       }
 
+      case 'cardTitle': {
+        const cdt = txt || '卡片标题';
+        return `<div class="editable-block style-card-title" data-style="cardTitle" style="margin:16px 0 10px"><span style="display:inline-block;background:${TL};border:1px solid ${T};border-radius:8px;padding:7px 16px;font-weight:700;color:${T};font-size:15px;">${cdt}</span></div>`;
+      }
+
       case 'arrowTitle': {
         const at = txt || '箭头标题';
         return `<div class="editable-block style-arrow-title" data-style="arrowTitle" style="margin:18px 0 10px"><span class="arrow-icon" style="color:${T};font-size:16px;font-weight:700">→</span><span class="arrow-text" style="font-size:16px;font-weight:700;color:#222;margin-left:8px">${at}</span></div>`;
@@ -1802,7 +1195,7 @@ export const useEditorStore = defineStore('editor', () => {
 
       case 'doubleLineTitle': {
         const dlt = txt || '双竖线标题';
-        return `<div class="editable-block style-double-line-title" data-style="doubleLineTitle" style="text-align:center;margin:20px 0 12px"><h2 style="display:inline-block;border-left:4px solid ${S};border-right:4px solid ${S};padding:4px 12px;font-size:17px;font-weight:700;color:#333;margin:0;">${dlt}</h2></div>`;
+        return `<div class="editable-block style-double-line-title" data-style="doubleLineTitle" style="text-align:center;margin:20px 0 12px"><h2 style="display:inline-block;border-left:4px solid ${T};border-right:4px solid ${T};padding:4px 12px;font-size:17px;font-weight:700;color:#333;margin:0;">${dlt}</h2></div>`;
       }
 
       case 'diamondTitle': {
@@ -1812,7 +1205,7 @@ export const useEditorStore = defineStore('editor', () => {
 
       case 'goldenQuote': {
         const gqt = txt || '金句名言，字字珠玑，发人深省。';
-        return `<div class="editable-block style-golden-quote" data-style="goldenQuote" style="text-align:center;padding:24px 20px;margin:20px 0;background:${TL};border-radius:8px"><div style="font-size:32px;color:${A};line-height:1;margin-bottom:8px;font-family:serif">&ldquo;</div><div style="font-size:16px;color:${A};line-height:1.8">${gqt}</div></div>`;
+        return `<div class="editable-block style-golden-quote" data-style="goldenQuote" style="text-align:center;padding:24px 20px;margin:20px 0;background:${TL};border-radius:8px"><div style="font-size:32px;color:${T};line-height:1;margin-bottom:8px;font-family:serif">&ldquo;</div><div style="font-size:16px;color:#333;line-height:1.8">${gqt}</div></div>`;
       }
 
       case 'leadParagraph': {
@@ -2067,12 +1460,17 @@ export const useEditorStore = defineStore('editor', () => {
       }
 
       case 'topicSectionCard': {
-        // 主题章节卡片（简化）：浅色底 + 左对齐章节标题(无编号) + 横线 + 白底文本框（无图片/无装饰）
-        const title = comp.title || '章节标题';
-        const bodyText = comp.bodyText || txt || '输入';
-        return `<div class="editable-block style-topic-section-card" data-style="topicSectionCard" style="background:${VL};border-radius:12px;padding:20px;margin:20px 0">` +
-          // 标题栏：左对齐（无编号），下方横线
-          `<div class="tsc-title" style="font-size:20px;font-weight:800;color:#333;line-height:1;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid ${T}">${title}</div>` +
+        // 主题章节卡片（简化）：浅色底 + 左对齐章节标题(编号+标题) + 横线 + 白底文本框（无图片/无装饰）
+        const sn = stepNum && !isNaN(stepNum) ? parseInt(stepNum, 10) : (comp.num ? parseInt(comp.num, 10) : 1);
+        const numStr = String(sn).padStart(2, '0');
+        const title = txt || '章节标题';
+        const bodyText = comp.bodyText || '这里是正文内容，可以写一段关于这个主题的介绍文字。';
+        return `<div class="editable-block style-topic-section-card" data-style="topicSectionCard" data-num="${sn}" style="background:${VL};border-radius:12px;padding:20px;margin:20px 0">` +
+          // 标题栏：左对齐（编号 + 标题），下方横线
+          `<div style="display:flex;align-items:flex-end;gap:10px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid ${T}">` +
+            `<span style="font-size:30px;font-weight:900;color:${T};line-height:1;letter-spacing:1px">${numStr}.</span>` +
+            `<span class="tsc-title" style="font-size:20px;font-weight:800;color:#333;line-height:1">${title}</span>` +
+          `</div>` +
           // 白底文本框
           `<div style="background:#fff;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.06)">` +
             `<p style="margin:0;font-size:${appearance.value?.fontSize || 15}px;color:#444;line-height:1.9;text-align:justify">${br(bodyText)}</p>` +
@@ -2082,12 +1480,11 @@ export const useEditorStore = defineStore('editor', () => {
 
       case 'doubleLayerFrame': {
         // 国风双层框：外层浅底(主题浅色) + 内层白底 + 主题色边框 + 标题(主题色) + 正文
-        const dlfTitle = comp.title || txt || '立秋 · 节气';
+        const dlfTitle = txt || '立秋 · 节气';
         const bodyText = comp.bodyText || '盛夏的热烈已然沉淀，秋日的温柔缓缓登场。万物收敛锋芒、蓄力生长，人间也迎来了最适合沉淀、精进的时节。愿我们在这个初秋，褪去浮躁、静心沉淀，如秋日万物一般，收敛心性、深耕自我。';
-        const dlfSub = comp.subtitle ? ` <span class="dlf-sub" style="font-size:14px;color:${T};opacity:0.65;font-weight:normal;letter-spacing:1px">${comp.subtitle}</span>` : '';
         return `<div class="editable-block style-double-layer-frame" data-style="doubleLayerFrame" style="background:${TL};border-radius:4px;padding:20px;margin:18px 0">` +
           `<div style="background-color:#ffffff;border:1px solid ${T};padding:24px 28px">` +
-            `<div class="dlf-title" style="font-size:18px;color:${T};font-weight:500;letter-spacing:2px;margin-bottom:16px">${dlfTitle}${dlfSub}</div>` +
+            `<div class="dlf-title" style="font-size:18px;color:${T};font-weight:500;letter-spacing:2px;margin-bottom:16px">${dlfTitle} <span class="dlf-sub" style="font-size:14px;color:${T};opacity:0.65;font-weight:normal;letter-spacing:1px">/ START OF AUTUMN</span></div>` +
             `<p style="margin:0;font-size:${appearance.value?.fontSize || 15}px;color:#4a4a4a;line-height:1.8;text-align:justify">${br(bodyText)}</p>` +
           `</div>` +
         `</div>`;
@@ -2125,19 +1522,18 @@ export const useEditorStore = defineStore('editor', () => {
         // 分割线金句：主题色侧线 + 主题色标题 + 居中正文
         const dqBody = txt || '真正的高级感，从来不是堆砌元素，而是克制的留白与舒适的配色。';
         return `<div class="editable-block style-divider-quote" data-style="dividerQuote" style="padding:20px 0;text-align:center;margin:18px 0">` +
-          `<div><span style="display:inline-block;width:60px;height:1px;background:${A};vertical-align:middle"></span><span class="dq-title" style="margin:0 16px;font-size:16px;color:${A};letter-spacing:3px">核心观点</span><span style="display:inline-block;width:60px;height:1px;background:${A};vertical-align:middle"></span></div>` +
+          `<div><span style="display:inline-block;width:60px;height:1px;background:${T};vertical-align:middle"></span><span class="dq-title" style="margin:0 16px;font-size:16px;color:${T};letter-spacing:3px">核心观点</span><span style="display:inline-block;width:60px;height:1px;background:${T};vertical-align:middle"></span></div>` +
           `<div class="dq-text" style="margin-top:18px;font-size:15px;color:#333;line-height:1.8;padding:0 20px;text-align:center">${br(dqBody)}</div>` +
         `</div>`;
       }
 
       case 'doubleLayerFrameRound': {
         // 国风双层框·圆角版：外浅底(主题浅色)+圆角 + 内白底+主题色边框+圆角 + 标题(主题色)+正文
-        const dlfrTitle = comp.title || txt || '立秋 · 节气';
+        const dlfrTitle = txt || '立秋 · 节气';
         const dlfrBody = comp.bodyText || '盛夏的热烈已然沉淀，秋日的温柔缓缓登场。万物收敛锋芒、蓄力生长，人间也迎来了最适合沉淀、精进的时节。愿我们在这个初秋，褪去浮躁、静心沉淀，如秋日万物一般，收敛心性、深耕自我。';
-        const dlfrSub = comp.subtitle ? ` <span class="dlfr-sub" style="font-size:14px;color:${T};opacity:0.65;font-weight:normal;letter-spacing:1px">${comp.subtitle}</span>` : '';
         return `<div class="editable-block style-double-layer-frame-round" data-style="doubleLayerFrameRound" style="background:${TL};border-radius:12px;padding:18px;margin:18px 0">` +
           `<div style="background-color:#ffffff;border:1px solid ${T};border-radius:8px;padding:24px 28px">` +
-            `<div class="dlfr-title" style="font-size:18px;color:${T};font-weight:500;letter-spacing:2px;margin-bottom:16px">${dlfrTitle}${dlfrSub}</div>` +
+            `<div class="dlfr-title" style="font-size:18px;color:${T};font-weight:500;letter-spacing:2px;margin-bottom:16px">${dlfrTitle} <span class="dlfr-sub" style="font-size:14px;color:${T};opacity:0.65;font-weight:normal;letter-spacing:1px">/ START OF AUTUMN</span></div>` +
             `<p class="dlfr-body" style="margin:0;font-size:${appearance.value?.fontSize || 15}px;color:#4a4a4a;line-height:1.8;text-align:justify">${br(dlfrBody)}</p>` +
           `</div>` +
         `</div>`;
@@ -2145,7 +1541,7 @@ export const useEditorStore = defineStore('editor', () => {
 
       case 'waistSealRounded': {
         // 腰封圆角：外浅底(主题浅色)+大圆角 + 内白底+主题色细边 + 顶部腰封标题(主题色)+正文
-        const wsrTitle = comp.title || txt || '三伏养生三原则';
+        const wsrTitle = txt || '三伏养生三原则';
         const wsrBody = comp.bodyText || '一曰顺时养阳，不贪寒凉；二曰健脾祛湿，饮食清淡；三曰静心安神，戒骄戒躁。三者兼顾，方能安然度夏，不伤元气。';
         return `<div class="editable-block style-waist-seal-rounded" data-style="waistSealRounded" style="padding:16px;background:${TL};border-radius:14px;margin:18px 0">` +
           `<div style="background-color:#ffffff;border-radius:10px;overflow:hidden;border:1px solid ${T}">` +
@@ -2157,7 +1553,7 @@ export const useEditorStore = defineStore('editor', () => {
 
       case 'bambooJoint': {
         // 竹节分割：外浅底(主题浅色)+圆角 + 左侧竹节竖条(主题色)+主题色标题+右侧细线(主题色) + 正文
-        const bjTitle = comp.title || txt || '初伏 · 养阳';
+        const bjTitle = txt || '初伏 · 养阳';
         const bjBody = comp.bodyText || '三伏天是一年中阳气最盛的时段，此时人体阳气浮于体表，内里虚寒，最忌贪凉饮冷。饮食宜温不宜寒，作息宜静不宜躁，顺势养阳，方能为秋冬积蓄能量。';
         return `<div class="editable-block style-bamboo-joint" data-style="bambooJoint" style="padding:24px 28px;background:${TL};border-radius:12px;margin:18px 0">` +
           `<table style="width:100%;border-collapse:collapse;margin-bottom:18px"><tr>` +
@@ -2183,77 +1579,38 @@ export const useEditorStore = defineStore('editor', () => {
 
       case 'qaBox': {
         // 互动提问框：外层主题浅底+大圆角，内层白卡+主题浅边+居中；跟随主题色
-        // 标题/结尾固定，中间内容区可传入 comp.bodyText 或 txt
-        const qaBody = comp.bodyText || txt || '关于三伏养生，你还有什么私藏的小妙招？<br>欢迎在留言区分享给大家～';
-        const qaFooter = getCompText('qaBox.footer', '点赞 + 在看，夏日安康 ❤');
+        const qaBody = txt || '关于三伏养生，你还有什么私藏的小妙招？<br>欢迎在留言区分享给大家～';
         return `<div class="editable-block style-qa-box" data-style="qaBox" style="margin-top:30px;padding:18px;background:${TF};border-radius:12px">` +
           `<div style="padding:24px 28px;background:#ffffff;border:1px solid ${TL};border-radius:8px;text-align:center">` +
             `<div class="qa-title" style="font-size:16px;color:${T};font-weight:500;letter-spacing:2px;margin-bottom:14px">· 互动话题 ·</div>` +
             `<div class="qa-body" style="font-size:15px;color:#4a4a4a;line-height:1.8;margin-bottom:18px">${qaBody}</div>` +
-            `<div class="qa-footer" style="font-size:13px;color:${T};letter-spacing:1px">${qaFooter}</div>` +
+            `<div class="qa-footer" style="font-size:13px;color:${T};letter-spacing:1px">点赞 + 在看，夏日安康 ❤</div>` +
           `</div>` +
         `</div>`;
       }
 
       case 'nextPreview': {
-        // 下期预告：书卷式预告（np-head 标题 / np-body 内容 / np-follow 引导关注）
-        // 优先用 applyBlockStyle 传入的 comp.title / comp.bodyText（标题+正文双段卡片）
-        // 兼容旧 txt（Markdown/关键字映射）路径：按首个「：」拆标题/正文，「关注我」起为引导关注
-        const dFollow = getCompText('nextPreview.follow', '关注我，一起读懂改运的底层逻辑。')
-        let npHead, npBody, npFollow
-        if (comp.title || comp.bodyText) {
-          npHead = comp.title || (txt ? txt.split('：')[0] : '下期预告')
-          npBody = comp.bodyText || ''
-          npFollow = dFollow
-        } else if (txt) {
-          const idx = txt.indexOf('：')
-          const head = idx > -1 ? txt.slice(0, idx) : txt
-          const rest = idx > -1 ? txt.slice(idx + 1) : ''
-          const fIdx = rest.indexOf('关注我')
-          if (fIdx > -1) {
-            npHead = head
-            npBody = rest.slice(0, fIdx).replace(/[。.\s]+$/, '')
-            npFollow = rest.slice(fIdx)
-          } else {
-            npHead = head
-            npBody = rest
-            npFollow = dFollow
-          }
-        } else {
-          npHead = '易命四十二术·逐成者务修者'
-          npBody = '越急着要结果的人，越容易把路走歪——修己的人，反而先到终点。'
-          npFollow = dFollow
-        }
+        // 下期预告：书卷式预告；外层主题浅底+圆角，左侧竖排标题(writing-mode)+右侧内容；跟随主题色；微信用 table 替代 flex
+        const npHead = txt || '中伏养生 · 健脾祛湿篇';
         return `<div class="editable-block style-next-preview" data-style="nextPreview" style="margin-top:30px;padding:20px;background:${TF};border-radius:12px">` +
           `<table style="width:100%;border-collapse:collapse"><tr>` +
-            `<td style="width:1%;white-space:nowrap;vertical-align:top;padding:8px 5px 8px 3px;border-right:1px solid ${TL};writing-mode:vertical-rl;text-orientation:upright;font-size:14px;color:${T};letter-spacing:3px">下期预告</td>` +
-            `<td style="vertical-align:top;padding:4px 4px 4px 12px">` +
+            `<td style="width:1%;white-space:nowrap;vertical-align:top;padding:8px 12px 8px 6px;border-right:1px solid ${TL};writing-mode:vertical-rl;text-orientation:upright;font-size:15px;color:${T};letter-spacing:4px">下期预告</td>` +
+            `<td style="vertical-align:top;padding:4px 6px 4px 16px">` +
               `<div class="np-head" style="font-size:16px;color:${T};font-weight:500;margin-bottom:10px;letter-spacing:1px">${npHead}</div>` +
-              (npBody ? `<div class="np-body" style="font-size:14.5px;color:#554a3d;line-height:1.8;margin-bottom:12px">${br(npBody)}</div>` : '') +
-              (npFollow ? `<div class="np-follow" style="font-size:13px;color:${T};letter-spacing:1px;margin-top:14px;padding-top:12px;border-top:1px solid ${TL}">${npFollow}</div>` : '') +
+              `<div class="np-body" style="font-size:14.5px;color:#554a3d;line-height:1.8;margin-bottom:12px">下周详解中伏最实用的祛湿方法，从饮食到作息全攻略，不想错过记得星标。</div>` +
+              `<div class="np-footer" style="font-size:13px;color:${T}">你最想了解哪方面？提前留言告诉我～</div>` +
             `</td>` +
           `</tr></table>` +
         `</div>`;
       }
 
       case 'zenQuote': {
-        // 留白金句：禅意留白款；居中，主句(来自段落/配置)+细分隔线+落款(可配置)
-        // 主句优先用当前段落内容(comp.bodyText)或传入 txt；落款读可配置文案，留空则不显示
-        const zqMain = comp.bodyText || txt || '愿你安然度夏<br>心静自然凉';
-        const zqFooter = getCompText('zenQuote.footer', '晚安，我们明天见');
+        // 留白金句：禅意留白款；居中，主句+细分隔线+落款；跟随主题色
+        const zqMain = txt || '愿你安然度夏<br>心静自然凉';
         return `<div class="editable-block style-zen-quote" data-style="zenQuote" style="margin-top:40px;text-align:center;padding:10px 20px">` +
           `<div class="zq-main" style="font-size:15px;color:${T};letter-spacing:2px;line-height:2;margin-bottom:20px">${zqMain}</div>` +
           `<div style="width:30px;height:1px;background:${T};margin:0 auto 16px"></div>` +
-          (zqFooter ? `<div class="zq-footer" style="font-size:13px;color:${T};letter-spacing:1px">${zqFooter}</div>` : '') +
-        `</div>`;
-      }
-
-      case 'noteNoBg': {
-        // 注释无背景：顶部细分割线 + 小字次要色 + 无背景；跟随主题边框/次要文字
-        const txtNote = txt || '（这一术出自小说《改运奇书》，本文只做观点层面的借用与生活化的再解读，不涉及小说情节。）';
-        return `<div class="editable-block style-note-no-bg" data-style="noteNoBg" style="margin-top:24px">` +
-          `<div style="height:1px;background:${BD};margin-bottom:12px"></div>` +
-          `<div class="note-text" style="font-size:12.5px;color:${TMT};line-height:1.7;letter-spacing:.3px">${txtNote}</div>` +
+          `<div class="zq-footer" style="font-size:13px;color:${T};letter-spacing:1px">晚安，我们明天见</div>` +
         `</div>`;
       }
 
@@ -2271,7 +1628,14 @@ export const useEditorStore = defineStore('editor', () => {
     }
 
     try {
-      return buildWechatHTML(editorContent.value);
+      const innerContent = buildWechatHTML(editorContent.value);
+
+      const fs = app.fontSize;
+      const lh = (1.8 * app.lineSpacing).toFixed(1);
+
+      return `<div style="font-size:${fs}px;line-height:${lh};color:${app.bodyColor};letter-spacing:${app.letterSpacing}px;">
+${innerContent}
+</div>`;
     } catch (e) {
       return `<div style="font-size:${app.fontSize}px;line-height:${(1.8*app.lineSpacing).toFixed(1)};color:${app.bodyColor};letter-spacing:${app.letterSpacing}px;">
 <p style="color:red;font-size:13px;background:#fee;padding:8px 12px;border-radius:6px;margin:14px 0;">⚠️ previewHTML 渲染出错：${e.message || e}</p>
@@ -2289,26 +1653,11 @@ ${editorContent.value}
     createCustomTheme,
     deleteCustomTheme,
     updateCustomTheme,
-    themeOverrides,
-    saveThemeOverride,
-    resetThemeOverride,
-    hasThemeOverride,
-    keywordMaps,
-    getKeywordMaps,
-    saveKeywordMaps,
-    deleteKeywordMap,
     setTheme,
     currentThemeColor,
     currentThemeLight,
     currentVolumeColor,
     currentVolumeLight,
-    currentThemeAccent,
-    currentThemeSecond,
-    currentThemeTextMain,
-    currentThemeTextMuted,
-    currentThemeBgPage,
-    currentThemeBgCard,
-    currentThemeBorder,
     // 样式预设系统
     currentStylePreset,
     customStylePresets,
@@ -2318,11 +1667,6 @@ ${editorContent.value}
     deleteStylePreset,
     updateStylePreset,
     setStylePreset,
-    // 样式预设覆盖层
-    stylePresetOverrides,
-    saveStylePresetOverride,
-    resetStylePresetOverride,
-    hasStylePresetOverride,
     // 编辑器
     editorContent,
     selectedComponent,
@@ -2333,10 +1677,6 @@ ${editorContent.value}
     // 外观配置
     appearance,
     setAppearance,
-    pageBgMode,
-    setPageBgMode,
-    pageBgInline,
-    PAGE_BG_OPTIONS,
     // 组件样式选项（供下拉/对话框使用）
     TITLE_STYLE_OPTIONS,
     QUOTE_STYLE_OPTIONS,

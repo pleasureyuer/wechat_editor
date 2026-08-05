@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-06-19T14:33:55.776Z",
+  "total": 18,
+  "passed": 16,
+  "failed": 2,
+  "passRate": 89,
+  "results": [
+    {
+      "name": "页面标题",
+      "ok": true,
+      "detail": "title=\"公众号排版工具\""
+    },
+    {
+      "name": "左侧栏存在",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "编辑区存在",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "右侧栏存在",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "顶部工具栏存在",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "完整示例按钮存在",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "完整示例执行后编辑区有内容",
+      "ok": true,
+      "detail": "内容长度: 519ch"
+    },
+    {
+      "name": "Markdown 输入",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "一键排版后编辑区有HTML",
+      "ok": true,
+      "detail": "HTML长度: 19051"
+    },
+    {
+      "name": "主题色选项存在",
+      "ok": true,
+      "detail": "找到 11 个"
+    },
+    {
+      "name": "主题色 CSS 变量已更新",
+      "ok": false,
+      "detail": "值: "
+    },
+    {
+      "name": "样式预设选项存在",
+      "ok": true,
+      "detail": "找到 1 个相关元素"
+    },
+    {
+      "name": "编辑器工具栏按钮",
+      "ok": true,
+      "detail": "123 个按钮"
+    },
+    {
+      "name": "加粗按钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "斜体按钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "下划线按钮",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "一键复制按钮",
+      "ok": false,
+      "detail": ""
+    },
+    {
+      "name": "预览区有内容",
+      "ok": true,
+      "detail": "长度: 6860ch"
+    }
+  ],
+  "screenshots": "F:\\wechat_editor\\tests\\e2e\\screenshots"
+}

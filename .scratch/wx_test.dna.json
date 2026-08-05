@@ -1,0 +1,273 @@
+{
+  "source": {
+    "url": "https://mp.weixin.qq.com/s/MO5i-RzyGcCxURLjgbUpSQ",
+    "title": "暑假带娃去哪玩？深圳暑假免费遛娃路线推荐（第七期）",
+    "fetchedAt": "2026-07-23T13:01:43.456Z"
+  },
+  "themeColors": {
+    "main": "#3f3f3f",
+    "accent": "#54a0f7",
+    "text": "#3f3f3f",
+    "background": "#ffffff",
+    "palette": [
+      {
+        "hex": "#3f3f3f",
+        "weight": 115
+      },
+      {
+        "hex": "#333333",
+        "weight": 57
+      },
+      {
+        "hex": "#000000",
+        "weight": 50
+      },
+      {
+        "hex": "#595959",
+        "weight": 26
+      },
+      {
+        "hex": "#222222",
+        "weight": 25
+      },
+      {
+        "hex": "#c00000",
+        "weight": 17
+      }
+    ]
+  },
+  "typography": {
+    "bodyFontSize": "17px",
+    "bodyLineHeight": "2em",
+    "headingCounts": {
+      "h1": 0,
+      "h2": 0,
+      "h3": 0
+    }
+  },
+  "components": {
+    "card": {
+      "count": 38,
+      "sampleStyle": "background-color: #f1f9ff;padding: 6px 10px;box-shadow: 2px 1px 3px #9edaf5,0px 2px 3px #9edaf5;margin: 0 3px 3px;box-sizing:border-box;"
+    },
+    "paragraph": {
+      "count": 139,
+      "sampleStyle": "text-align:center;font-size: 20px;color: #4e9bca;"
+    },
+    "quote": {
+      "count": 1,
+      "sampleStyle": "-webkit-tap-highlight-color: transparent;margin: 0px 0px 0em;padding: 0px;outline: none 0px !important;box-sizing: border-box;overflow-wrap: break-word !importa"
+    }
+  },
+  "imgSlots": [
+    {
+      "index": 0,
+      "position": "fullwidth",
+      "ratio": 0.267,
+      "widthPct": 100,
+      "dataW": 750,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 1,
+      "position": "fullwidth",
+      "ratio": 1,
+      "widthPct": 100,
+      "dataW": 580,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 2,
+      "position": "fullwidth",
+      "ratio": 1.351,
+      "widthPct": 100,
+      "dataW": 239,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 3,
+      "position": "fullwidth",
+      "ratio": 0.359,
+      "widthPct": 100,
+      "dataW": 92,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 4,
+      "position": "fullwidth",
+      "ratio": 0.666,
+      "widthPct": 100,
+      "dataW": 1080,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 5,
+      "position": "fullwidth",
+      "ratio": 0.667,
+      "widthPct": 100,
+      "dataW": 1080,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 6,
+      "position": "fullwidth",
+      "ratio": 1,
+      "widthPct": 100,
+      "dataW": 430,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 7,
+      "position": "fullwidth",
+      "ratio": 1.849,
+      "widthPct": 100,
+      "dataW": 746,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 8,
+      "position": "fullwidth",
+      "ratio": 0.359,
+      "widthPct": 100,
+      "dataW": 92,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 9,
+      "position": "fullwidth",
+      "ratio": 0.667,
+      "widthPct": 100,
+      "dataW": 1080,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 10,
+      "position": "fullwidth",
+      "ratio": 0.667,
+      "widthPct": 100,
+      "dataW": 1080,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 11,
+      "position": "fullwidth",
+      "ratio": 1.351,
+      "widthPct": 100,
+      "dataW": 239,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 12,
+      "position": "fullwidth",
+      "ratio": 0.359,
+      "widthPct": 100,
+      "dataW": 92,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 13,
+      "position": "fullwidth",
+      "ratio": 0.667,
+      "widthPct": 100,
+      "dataW": 1080,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 14,
+      "position": "fullwidth",
+      "ratio": 0.75,
+      "widthPct": 100,
+      "dataW": 1366,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 15,
+      "position": "fullwidth",
+      "ratio": 0.75,
+      "widthPct": 100,
+      "dataW": 1366,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 16,
+      "position": "fullwidth",
+      "ratio": 0.359,
+      "widthPct": 100,
+      "dataW": 92,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 17,
+      "position": "fullwidth",
+      "ratio": 0.667,
+      "widthPct": 100,
+      "dataW": 1080,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 18,
+      "position": "fullwidth",
+      "ratio": 0.75,
+      "widthPct": 100,
+      "dataW": 1080,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 19,
+      "position": "fullwidth",
+      "ratio": 1,
+      "widthPct": 100,
+      "dataW": 430,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 20,
+      "position": "fullwidth",
+      "ratio": 1.286,
+      "widthPct": 100,
+      "dataW": 584,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 21,
+      "position": "fullwidth",
+      "ratio": 1.1,
+      "widthPct": 100,
+      "dataW": 400,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 22,
+      "position": "fullwidth",
+      "ratio": 0.136,
+      "widthPct": 100,
+      "dataW": 1068,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 23,
+      "position": "fullwidth",
+      "ratio": 0.444,
+      "widthPct": 100,
+      "dataW": 640,
+      "captionHint": "通栏/封面图"
+    },
+    {
+      "index": 24,
+      "position": "fullwidth",
+      "ratio": 0.161,
+      "widthPct": 100,
+      "dataW": 640,
+      "captionHint": "通栏/封面图"
+    }
+  ],
+  "skeleton": {
+    "headingRhythm": "H1:0 H2:0 H3:0，正文段落 100",
+    "paraAvgChars": 28,
+    "imageCount": 25,
+    "imageRatio": "约每 112 字 1 图（共 25 图）",
+    "opening": "card",
+    "ending": "paragraph"
+  },
+  "_note": "复刻仅记录图片位置+长宽比，原图内容不保存不下载"
+}

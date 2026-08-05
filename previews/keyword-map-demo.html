@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>关键字映射演示 · 茶韵宣纸</title>
+<style>
+  body { margin:0; background:#eee; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; padding:24px; }
+  .wrap { max-width:520px; margin:0 auto; }
+  .panel { background:#fff; border-radius:10px; padding:18px; box-shadow:0 2px 10px rgba(0,0,0,.08); margin-bottom:18px; }
+  .panel h3 { margin:0 0 10px; font-size:14px; color:#7A6B4F; }
+  .cfg { font-size:13px; line-height:1.9; color:#444; }
+  .cfg code { background:#F1EBDF; color:#7A6B4F; padding:1px 6px; border-radius:4px; font-size:12px; }
+  .md-line { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:13px; background:#2b2b2b; color:#e6e6e6; padding:10px 12px; border-radius:6px; white-space:pre-wrap; }
+  .arrow { text-align:center; font-size:20px; color:#7A6B4F; margin:6px 0; }
+  .article { background:#F7F3EA; border-radius:10px; padding:18px 16px; color:#444038; }
+  .note { font-size:12px; color:#887F6A; margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="panel">
+    <h3>① 主题「茶韵宣纸」里配置的关键字映射</h3>
+    <div class="cfg">
+      关键字：<code>文章标题：</code><br>
+      映射组件：<code>居中标题 (centerLineTitle)</code><br>
+      ☑ 不显示关键词 → 输出正文里不含「文章标题：」
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>② 粘贴的 Markdown（内容输入）</h3>
+    <div class="md-line">文章标题：压垮你的不是那道坎，是你心里的牢</div>
+  </div>
+
+  <div class="arrow">⬇ 应用 Markdown 后</div>
+
+  <div class="article">
+    <!-- 渲染结果：居中标题，无「文章标题：」前缀，茶韵宣纸配色 -->
+    <div style="margin:20px 0 12px;text-align:center;">
+      <h2 style="font-size:18px;font-weight:700;display:inline-block;border-bottom:2px solid #7A6B4F;padding-bottom:8px;color:#333;margin:0;letter-spacing:1px;">压垮你的不是那道坎，是你心里的牢</h2>
+    </div>
+    <p class="note">↑ 只有居中标题文字，正文里没有「文章标题：」四字。</p>
+  </div>
+
+  <div class="panel" style="margin-top:18px;">
+    <h3>③ 多个映射可叠加（同一主题）</h3>
+    <div class="cfg">
+      <code>摘要：</code> → 引用主题色导语卡片 · ☑ 不显示<br>
+      <code>金句：</code> → 金句文字模块 · ☑ 不显示<br>
+      <code>互动：</code> → 互动提问框 · ☑ 不显示<br>
+      <span style="color:#887F6A;">映射按主题隔离，切到「清新/冷灰」主题这些映射不生效。</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
