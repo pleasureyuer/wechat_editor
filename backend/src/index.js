@@ -321,6 +321,39 @@ app.post('/api/upload/image', async (req, res) => {
   }
 });
 
+// ── API: base64 正文图片上传到微信 CDN（返回 url，用于装饰块截图嵌入）
+// 与 /api/upload/image（素材库 media_id）不同，这里走 media/uploadimg 返回正文可用的 url
+app.post('/api/wechat/upload-base64-image', async (req, res) => {
+  try {
+    const { base64 } = req.body;
+    if (!base64) return res.status(400).json({ success: false, error: '缺少 base64 图片数据' });
+
+    const match = base64.match(/^data:(image\/(jpeg|png|gif|jpg|webp));base64,(.+)$/s);
+    if (!match) return res.status(400).json({ success: false, error: '仅支持 JPEG/PNG/GIF/WEBP 的 base64 图片' });
+
+    let token;
+    try {
+      token = await getAccessToken();
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+
+    const contentType = match[1];
+    const buffer = Buffer.from(match[2], 'base64');
+    const ext = contentType.includes('png') ? '.png' : contentType.includes('gif') ? '.gif' : '.jpg';
+
+    const form = new FormData();
+    form.append('media', new Blob([buffer], { type: contentType }), `deco${ext}`);
+
+    const upRes = await fetch(`${WECHAT_API}/media/uploadimg?access_token=${token}`, { method: 'POST', body: form });
+    const upData = await upRes.json();
+    if (!upData.url) return res.status(500).json({ success: false, error: upData.errmsg || '上传图片到微信失败' });
+    res.json({ success: true, url: upData.url });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── 微信凭据管理（多账号）─────────────────────────────────
 // GET  → 查看当前所有账号配置状态（脱敏）
 app.get('/api/settings/wechat', (req, res) => {
